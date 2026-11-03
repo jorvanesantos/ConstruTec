@@ -1,24 +1,32 @@
 # ConstruTec
 
-Plataforma inteligente para cálculo e gestão de materiais de construção.
+Plataforma para cálculo e gestão de materiais de construção, com frontend em React/TypeScript e API em Java com Spring Boot.
 
 ## Tecnologias
-- Frontend: Angular + TypeScript
-- Backend: Node.js + Express
+
+- Frontend: React, TypeScript e Vite
+- Backend: Java 25 e Spring Boot 3.5
 - Banco de dados: MySQL
-- Autenticação: JWT + bcrypt
 
-## Estrutura
-- `frontend/construtec-web` – aplicação Angular
-- `backend/construtec-api` – API REST
-- `database/` – migrations, seeds e scripts
-- `docs/` – documentação
+## Executar o frontend
 
-## Equipe
-- Dev 1 – Frontend base e layout
-- Dev 2 – Frontend de funcionalidades
-- Dev 3 – Backend/API
-- Dev 4 – Banco, administração e testes
+Requisitos: Node.js.
 
-## Como executar
-(Será preenchido conforme o projeto evoluir.)
+```bash
+npm install
+npm run dev
+```
+
+No Windows, também é possível iniciar com `INICIAR_PROJETO.bat`.
+
+## Executar o backend
+
+Requisitos: JDK 25, Maven e MySQL.
+
+Configure as variáveis `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD` conforme seu banco. Na pasta `backend`, execute:
+
+```bash
+mvn spring-boot:run
+```
+
+A API inicia na porta `8080`. Scripts e instruções adicionais estão nas pastas `database/` e `documentacao/`.

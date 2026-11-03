@@ -1,0 +1,87 @@
+================================================================================
+          POR QUE A TELA FICA BRANCA AO ABRIR O INDEX.HTML E COMO RESOLVER
+================================================================================
+
+1. POR QUE A TELA FICA TODA BRANCA?
+--------------------------------------------------------------------------------
+Se você baixou a pasta do projeto no seu computador e clicou duas vezes no 
+arquivo 'index.html', o seu navegador abriu uma página totalmente em branco.
+
+Isso acontece por dois motivos técnicos muito simples:
+
+1. O ConstruTec é uma aplicação moderna construída com React e TypeScript (.tsx).
+   Nenhum navegador (Chrome, Edge, Firefox) consegue rodar arquivos TypeScript (.tsx) 
+   diretamente sem que um servidor local (Node.js/Vite) faça a tradução para 
+   JavaScript em tempo real.
+
+2. Ao dar dois cliques no arquivo, o navegador abre no modo local (file:///C:/...).
+   Por segurança, os navegadores modernos bloqueiam o carregamento de módulos e 
+   arquivos dinâmicos quando abertos com "file://".
+
+Portanto, o sistema NÃO deve ser aberto dando dois cliques no index.html.
+Ele precisa ser iniciado com o comando do Node.js, e aberto como um site:
+http://localhost:3000
+
+
+================================================================================
+2. COMO RESOLVER E ABRIR O SISTEMA PERFEITAMENTE (PASSO A PASSO)
+================================================================================
+
+MÉTODO MAIS FÁCIL (1 CLIQUE NO WINDOWS):
+--------------------------------------------------------------------------------
+1. Se ainda não tiver o Node.js instalado, baixe e instale a versão LTS no site oficial:
+   👉 https://nodejs.org (Basta baixar o instalador e clicar em 'Avançar' até o fim).
+
+2. Na pasta do projeto que você baixou, dê dois cliques no arquivo:
+   👉 INICIAR_PROJETO.bat
+
+Ele vai instalar os pacotes automaticamente, ligar o servidor e já abrir a página 
+no seu navegador em http://localhost:3000 funcionando 100%!
+
+
+--------------------------------------------------------------------------------
+MÉTODO MANUAL (PELO TERMINAL / PROMPT DE COMANDO):
+--------------------------------------------------------------------------------
+Se preferir rodar manualmente pelos comandos:
+
+Passo 1: Certifique-se de ter o Node.js instalado (https://nodejs.org).
+
+Passo 2: Abra o Prompt de Comando (CMD), PowerShell ou terminal dentro da pasta do projeto.
+   (Dica no Windows: abra a pasta do projeto, clique na barra de endereço lá em cima, 
+   digite 'cmd' e aperte Enter).
+
+Passo 3: Digite o comando para baixar as bibliotecas (apenas na primeira vez):
+   npm install
+
+Passo 4: Digite o comando para iniciar o sistema:
+   npm run dev
+
+Passo 5: O terminal mostrará uma mensagem como:
+   ➜  Local:   http://localhost:3000/
+
+Passo 6: Abra seu navegador (Chrome, Edge, Firefox) e digite no endereço:
+   http://localhost:3000
+
+Pronto! A calculadora, o catálogo de materiais, o painel de orçamentos e 
+todas as funções vão aparecer perfeitamente, sem nenhuma tela branca.
+
+
+================================================================================
+3. COMO GERAR UMA VERSÃO ESTÁTICA PRONTA PARA PRODUÇÃO (BUILD)
+================================================================================
+Se você quiser compilar o projeto para gerar arquivos HTML e JavaScript puros 
+já empacotados:
+
+1. No terminal da pasta do projeto, execute:
+   npm run build
+
+2. Uma pasta chamada 'dist' será criada com todos os arquivos prontos e otimizados.
+
+3. Para testar essa versão compilada:
+   npm run start
+   ou
+   npm run preview
+
+================================================================================
+ConstruTec - "Calcule com precisão, construa com economia."
+================================================================================

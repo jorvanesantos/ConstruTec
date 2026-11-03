@@ -1,0 +1,7 @@
+{
+  "name": "ConstruTec",
+  "description": "Plataforma inteligente para cálculo automatizado de materiais de construção civil, orçamentos e estimativas de custo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

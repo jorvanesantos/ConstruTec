@@ -1,0 +1,345 @@
+================================================================================
+                    CONSTRUTEC - GUIA PRÁTICO PASSO A PASSO
+           COMO CRIAR E ADICIONAR TODAS AS INFORMAÇÕES DO ZERO
+================================================================================
+
+Se você ainda não criou o banco de dados, ainda não tem as senhas, ou ainda não 
+sabe onde colocar cada dado, este guia foi feito para você. 
+
+Aqui você vai aprender exatamente:
+1. Como criar o seu Banco de Dados do zero (no seu PC ou na nuvem gratuita).
+2. Como criar o arquivo de configuração (.env) com seus acessos.
+3. Como cadastrar e adicionar novos materiais e preços.
+4. Como cadastrar um novo tipo de obra (ex: Piscina, Laje, Calçada, etc.).
+5. Como adicionar novas funções e rotas na sua API.
+6. Checklist para testar tudo na prática.
+
+--------------------------------------------------------------------------------
+ÍNDICE
+--------------------------------------------------------------------------------
+ETAPA 1: ONDE E COMO CRIAR O SEU BANCO DE DADOS (3 OPÇÕES SIMPLES)
+ETAPA 2: COMO CRIAR O ARQUIVO .env NA RAIZ DO PROJETO
+ETAPA 3: COMO ADICIONAR NOVOS MATERIAIS E PREÇOS
+ETAPA 4: COMO ADICIONAR NOVOS TIPOS DE OBRAS E REFORMAS
+ETAPA 5: COMO ADICIONAR NOVAS ROTAS NA SUA API (server.ts)
+ETAPA 6: COMO TESTAR E VER SE SUAS INFORMAÇÕES FORAM ADICIONADAS
+
+
+================================================================================
+ETAPA 1: ONDE E COMO CRIAR O SEU BANCO DE DADOS (3 OPÇÕES SIMPLES)
+================================================================================
+
+Você precisa de um servidor MySQL rodando. Escolha a opção que achar mais fácil:
+
+--------------------------------------------------------------------------------
+OPÇÃO A: USANDO O XAMPP (A mais fácil para iniciantes no Windows)
+--------------------------------------------------------------------------------
+1. Baixe e instale o XAMPP no site: https://www.apachefriends.org
+2. Abra o "XAMPP Control Panel".
+3. Clique no botão "Start" ao lado de "MySQL" (ele vai ficar verde).
+4. Clique no botão "Admin" ao lado de MySQL (ele abrirá o phpMyAdmin no navegador).
+5. No phpMyAdmin, clique na aba "SQL" no topo da página.
+6. Copie e cole todo o conteúdo do arquivo:
+   CAMINHO: /database/create_database.sql
+   E clique no botão "Executar" (ou "Go").
+7. Em seguida, selecione o banco "construtec_db" no menu da esquerda, 
+   clique na aba "SQL" novamente, copie e cole o conteúdo do arquivo:
+   CAMINHO: /database/create_tables.sql
+   E clique em "Executar".
+8. Por fim, copie e cole o conteúdo do arquivo:
+   CAMINHO: /database/insert_data.sql
+   E clique em "Executar".
+
+Pronto! Seu banco local foi criado com usuário 'root' e sem senha.
+
+--------------------------------------------------------------------------------
+OPÇÃO B: USANDO MYSQL WORKBENCH (Para quem tem MySQL instalado)
+--------------------------------------------------------------------------------
+1. Abra o MySQL Workbench e conecte na sua instância Local.
+2. Clique no menu "File" -> "Open SQL Script...".
+3. Selecione o arquivo /database/create_database.sql e clique no ícone de Raio ⚡ para executar.
+4. Faça o mesmo para /database/create_tables.sql e /database/insert_data.sql.
+
+--------------------------------------------------------------------------------
+OPÇÃO C: USANDO BANCO GRATUITO NA NUVEM (Não precisa instalar nada no PC)
+--------------------------------------------------------------------------------
+Se você não quer instalar o MySQL no seu computador, pode criar um banco na nuvem grátis:
+1. Crie uma conta gratuita em serviços como:
+   - Aiven (https://aiven.io) -> oferece MySQL grátis.
+   - Railway (https://railway.app) -> cria banco MySQL em 1 clique.
+2. Ao criar o banco, a plataforma vai te fornecer:
+   - Host (ex: mysql-12345.aivencloud.com)
+   - Porta (ex: 15234 ou 3306)
+   - Usuário (ex: avnadmin ou root)
+   - Senha (gerada automaticamente)
+   - Nome do banco (ex: defaultdb ou construtec_db)
+3. Você usará esses dados na ETAPA 2 a seguir.
+
+
+================================================================================
+ETAPA 2: COMO CRIAR O ARQUIVO .env NA RAIZ DO PROJETO
+================================================================================
+
+O arquivo `.env` guarda as informações confidenciais para o sistema saber onde 
+está o banco e qual é a senha.
+
+COMO CRIAR:
+1. Na raiz do projeto (mesma pasta onde ficam `package.json` e `server.ts`), 
+   crie um arquivo novo chamado exatamente:
+   .env
+   (Atenção: o nome começa com um ponto e NÃO tem extensão .txt no final).
+
+2. Abra o arquivo `.env` e cole o seguinte conteúdo:
+
+--------------------------------------------------------------------------------
+# CONEXÃO COM O BANCO DE DADOS
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=construtec_db
+DB_USER=root
+DB_PASSWORD=sua_senha_aqui
+
+# CONFIGURAÇÃO DO SERVIDOR LOCAL
+PORT=3000
+
+# ENDEREÇO DA SUA API PARA O FRONTEND (Opcional)
+VITE_API_URL=http://localhost:3000/api
+--------------------------------------------------------------------------------
+
+ONDE VOCÊ ALTERA:
+- Se você usou XAMPP no Windows:
+  Deixe `DB_USER=root` e `DB_PASSWORD=` (deixe em branco, sem nada após o igual).
+- Se você instalou MySQL com senha:
+  Troque `sua_senha_aqui` pela senha que você criou durante a instalação.
+- Se você usou Nuvem (Aiven/Railway):
+  Substitua o `DB_HOST`, `DB_PORT`, `DB_USER` e `DB_PASSWORD` pelos dados da nuvem.
+
+
+================================================================================
+ETAPA 3: COMO ADICIONAR NOVOS MATERIAIS E PREÇOS
+================================================================================
+
+Você tem DUAS formas de adicionar materiais:
+
+--------------------------------------------------------------------------------
+MÉTODO 1: ADICIONAR NO BANCO DE DADOS (VIA SQL)
+--------------------------------------------------------------------------------
+Se você quiser cadastrar um novo material diretamente no banco, 
+execute um comando SQL como este (no phpMyAdmin, Workbench ou terminal):
+
+Exemplo para adicionar "Porcelanato Retificado 84x84 cm":
+--------------------------------------------------------------------------------
+INSERT INTO materiais (
+    nome, 
+    categoria, 
+    unidade_base, 
+    preco_base, 
+    unidade_comercial, 
+    descricao
+) VALUES (
+    'Porcelanato Esmaltado Retificado 84x84 cm', 
+    'Pisos', 
+    'm²', 
+    79.90, 
+    'caixas (2,12 m²)', 
+    'Piso retificado de alto padrão para áreas internas salas e quartos.'
+);
+--------------------------------------------------------------------------------
+
+Exemplo para adicionar "Telha Termoacústica Sanduíche":
+--------------------------------------------------------------------------------
+INSERT INTO materiais (
+    nome, 
+    categoria, 
+    unidade_base, 
+    preco_base, 
+    unidade_comercial, 
+    descricao
+) VALUES (
+    'Telha Termoacústica Sanduíche Trapezoidal', 
+    'Telhados', 
+    'm²', 
+    95.00, 
+    'peças', 
+    'Telha metálica com isolamento em EPS contra calor e ruído.'
+);
+--------------------------------------------------------------------------------
+
+
+--------------------------------------------------------------------------------
+MÉTODO 2: ADICIONAR NO CATÁLOGO DO CÓDIGO FONTE DO FRONTEND
+--------------------------------------------------------------------------------
+Para que o novo material apareça imediatamente na tela do usuário no catálogo:
+
+ARQUIVO PARA EDITAR:
+CAMINHO: /src/data/catalog.ts
+
+1. Procure a lista `BASE_MATERIALS_CATALOG`.
+2. Adicione o seu novo material seguindo o modelo:
+
+--------------------------------------------------------------------------------
+  {
+    id: 'mat_porcelanato_84x84',
+    name: 'Porcelanato Retificado 84x84 cm',
+    category: 'Pisos',
+    baseUnit: 'm²',
+    basePrice: 79.90,
+    commercialUnit: 'caixas (2,12 m²)',
+    updatedAt: '2026-03-01',
+    description: 'Porcelanato de grande formato com acabamento polido.'
+  },
+--------------------------------------------------------------------------------
+
+
+================================================================================
+ETAPA 4: COMO ADICIONAR NOVOS TIPOS DE OBRAS E REFORMAS
+================================================================================
+
+Imagine que você queira adicionar um novo tipo de obra, por exemplo "Piscina" ou "Calçada".
+
+Siga estes 3 passos simples no código:
+
+--------------------------------------------------------------------------------
+PASSO 4.1: DECLARAR O NOME DO TIPO NO ARQUIVO DE TIPOS
+--------------------------------------------------------------------------------
+ARQUIVO: /src/types.ts
+
+Procure por:
+export type WorkTypeKey = 
+  | 'muro'
+  | 'parede'
+  | 'piso'
+  ...
+
+Adicione a sua nova opção:
+  | 'piscina'
+
+--------------------------------------------------------------------------------
+PASSO 4.2: ADICIONAR A DESCRIÇÃO NO CATÁLOGO
+--------------------------------------------------------------------------------
+ARQUIVO: /src/data/catalog.ts
+
+Dentro da lista `WORK_TYPES`, adicione o bloco:
+--------------------------------------------------------------------------------
+  {
+    id: 'piscina',
+    key: 'piscina',
+    name: 'Piscina',
+    title: 'Piscina de Concreto',
+    tagline: 'Escavação, alvenaria estrutural, impermeabilização e azulejo',
+    description: 'Calcule concreto usinado, armação de ferro CA-50, manta impermeabilizante e revestimento cerâmico.',
+    icon: 'Waves',
+    defaultWaste: 15,
+    defaultWastePercentage: 15,
+    category: 'estrutural'
+  },
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+PASSO 4.3: CRIAR A FÓRMULA DE CÁLCULO
+--------------------------------------------------------------------------------
+ARQUIVO: /src/services/calculationEngine.ts
+
+Adicione o método de cálculo:
+--------------------------------------------------------------------------------
+  static calculatePiscina(params: any): CalculationResult {
+    const comprimento = Number(params.length) || 6;
+    const largura = Number(params.width) || 3;
+    const profundidade = Number(params.depth) || 1.4;
+
+    // Área do fundo + 4 paredes
+    const areaFundo = comprimento * largura;
+    const areaParedes = 2 * (comprimento * profundidade) + 2 * (largura * profundidade);
+    const areaTotalRevestimento = areaFundo + areaParedes;
+    const volumeAgua = comprimento * largura * profundidade;
+
+    // Adicione os materiais necessários (concreto, ferro, impermeabilizante, azulejo)
+    // e retorne o resultado formatado no padrão CalculationResult!
+  }
+--------------------------------------------------------------------------------
+
+
+================================================================================
+ETAPA 5: COMO ADICIONAR NOVAS ROTAS NA SUA API (server.ts)
+================================================================================
+
+Quando você quiser criar uma nova funcionalidade na sua API (por exemplo, 
+uma rota para salvar o contato de um cliente ou para cadastrar um novo material):
+
+ARQUIVO PARA EDITAR:
+CAMINHO: /server.ts
+
+COMO ADICIONAR A ROTA NO ARQUIVO:
+Abra o `/server.ts` e antes da linha `app.listen`, adicione seu código:
+
+--------------------------------------------------------------------------------
+// Exemplo: Nova rota para cadastrar material via API (POST /api/materiais)
+app.post('/api/materiais', async (req: Request, res: Response) => {
+  try {
+    const { nome, categoria, precoBase, unidade } = req.body;
+
+    // Validação simples
+    if (!nome || !precoBase) {
+      return res.status(400).json({ error: 'Nome e Preço Base são obrigatórios!' });
+    }
+
+    // Se estiver usando banco MySQL:
+    /*
+    const query = 'INSERT INTO materiais (nome, categoria, preco_base, unidade_comercial) VALUES (?, ?, ?, ?)';
+    const [resultado]: any = await pool.query(query, [nome, categoria, precoBase, unidade]);
+    return res.status(201).json({ id: resultado.insertId, message: 'Material cadastrado!' });
+    */
+
+    // Se estiver usando lista em memória:
+    res.status(201).json({
+      message: 'Material recebido com sucesso!',
+      material: { nome, categoria, precoBase, unidade }
+    });
+  } catch (erro: any) {
+    res.status(500).json({ error: 'Erro ao processar requisição', details: erro.message });
+  }
+});
+--------------------------------------------------------------------------------
+
+
+================================================================================
+ETAPA 6: COMO TESTAR E VER SE SUAS INFORMAÇÕES FORAM ADICIONADAS
+================================================================================
+
+1. COMO TESTAR SE O SERVIDOR ESTÁ LENDO O .env:
+   No terminal, reinicie o servidor:
+   npm run dev
+
+   No console do terminal, você deverá ver:
+   "Server running on port 3000"
+
+2. COMO TESTAR UMA ROTA DEPOIS DE ADICIONADA:
+   Abra uma nova aba do seu navegador ou ferramenta como Postman/Insomnia:
+   http://localhost:3000/api/materiais
+   ou
+   http://localhost:3000/api/orcamentos
+
+   Se a tela responder uma lista em formato JSON, significa que sua API 
+   está conectada e respondendo perfeitamente!
+
+3. COMO TESTAR O FRONTEND:
+   Acesse a aplicação no navegador (http://localhost:3000).
+   Vá na aba "Catálogo de Materiais" ou na "Calculadora" e confira se os novos 
+   dados adicionados já aparecem nas caixas de seleção.
+
+
+================================================================================
+RESUMO DOS ARQUIVOS E SUAS FUNÇÕES
+================================================================================
+- /.env                             -> Suas senhas e credenciais do banco.
+- /database/create_database.sql      -> Cria a base de dados no MySQL.
+- /database/create_tables.sql        -> Cria as tabelas do sistema.
+- /database/insert_data.sql          -> Adiciona os dados iniciais.
+- /server.ts                        -> Onde você adiciona novas rotas da API.
+- /src/data/catalog.ts              -> Onde você adiciona novos materiais no frontend.
+- /src/services/calculationEngine.ts-> Onde ficam as fórmulas de cálculo.
+- /src/components/Calculator.tsx    -> Tela principal da calculadora de obras.
+
+================================================================================
+ConstruTec - "Calcule com precisão, construa com economia."
+================================================================================

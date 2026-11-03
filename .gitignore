@@ -1,21 +1,26 @@
-# Dependências
 node_modules/
 
-# Variáveis de ambiente (NUNCA versionar)
+# Environment variables (never commit secrets)
 .env
 .env.*
 !.env.example
 
-# Build
+# Build output
+build/
 dist/
+coverage/
+target/
 .angular/
 
 # Logs
 *.log
 npm-debug.log*
 
-# Editor / sistema
+# Editor / system
 .vscode/*
 !.vscode/extensions.json
 .DS_Store
 Thumbs.db
+
+# Local modernization tooling artifacts
+.github/modernize/java-upgrade/
