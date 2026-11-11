@@ -22,9 +22,11 @@ import { AuthModal } from './components/AuthModal';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { RegionalLocationModal } from './components/RegionalLocationModal';
 import { PrintBudgetModal } from './components/PrintBudgetModal';
+import { ProfileModal } from './components/ProfileModal';
+import { SupportTickets } from './components/SupportTickets';
 import { AuthGuard } from './guards/AuthGuard';
 import { AuthService } from './services/auth.service';
-import { HardHat, ShieldCheck, Heart, Mail, Phone, MapPin, Calculator as CalcIcon, FlaskConical } from 'lucide-react';
+import { ArrowLeft, HardHat, ShieldCheck, Heart, Mail, Phone, MapPin, Calculator as CalcIcon, FlaskConical } from 'lucide-react';
 
 export default function App() {
   // Theme State (Modo Claro / Escuro)
@@ -54,8 +56,25 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(() => {
     return AuthService.getCurrentUser();
   });
+  const [systemName, setSystemName] = useState('ConstruTec');
 
-  const [activeTab, setActiveTab] = useState<'home' | 'calculator' | 'budgets' | 'materials' | 'about' | 'dashboard' | 'admin'>(() => {
+  useEffect(() => {
+    fetch('/api/system-settings')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Não foi possível carregar as configurações gerais.');
+        return response.json();
+      })
+      .then((settings: { systemName?: string }) => {
+        if (settings.systemName) setSystemName(settings.systemName);
+      })
+      .catch((error) => console.error('[Sistema] Usando o nome padrão:', error));
+  }, []);
+
+  useEffect(() => {
+    document.title = systemName;
+  }, [systemName]);
+
+  const [activeTab, setActiveTab] = useState<'home' | 'calculator' | 'budgets' | 'materials' | 'support' | 'about' | 'dashboard' | 'admin'>(() => {
     const u = AuthService.getCurrentUser();
     if (u && (u.userType === 'ADM' || u.userType === 'ADM_MASTER' || u.userType === 'PROPRIETARIO')) {
       return 'admin';
@@ -65,7 +84,7 @@ export default function App() {
 
   const [selectedWorkType, setSelectedWorkType] = useState<WorkTypeKey>('muro');
   const [isUserTestMode, setIsUserTestMode] = useState<boolean>(false);
-  const [adminSubTab, setAdminSubTab] = useState<'overview' | 'users' | 'workTypes' | 'materials' | 'works' | 'history'>('overview');
+  const [adminSubTab, setAdminSubTab] = useState<'overview' | 'users' | 'workTypes' | 'materials' | 'works' | 'support' | 'history'>('overview');
 
   // Regional Location State
   const [currentLocation, setCurrentLocation] = useState<RegionalLocation>(() => {
@@ -76,13 +95,24 @@ export default function App() {
     return REGIONAL_LOCATIONS[0]; // SP default
   });
 
+  const loadLocalBudgets = (userId?: string): SavedBudget[] => {
+    if (!userId) return [];
+    try {
+      const saved = localStorage.getItem(`construtec_budgets_${userId}`);
+      const parsed: unknown = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((budget): budget is SavedBudget => Boolean(budget && typeof budget === 'object' && budget.userId === userId))
+        : [];
+    } catch (error) {
+      console.error('[Orçamentos] Não foi possível ler o histórico local:', error);
+      return [];
+    }
+  };
+
   // Saved Budgets State
   const [budgets, setBudgets] = useState<SavedBudget[]>(() => {
-    const saved = localStorage.getItem('construtec_budgets');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    return [];
+    const currentUser = AuthService.getCurrentUser();
+    return loadLocalBudgets(currentUser?.id);
   });
 
   // Modals state
@@ -91,6 +121,7 @@ export default function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMessage, setAuthModalMessage] = useState<string | undefined>();
   const [changePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [printModalData, setPrintModalData] = useState<{
     isOpen: boolean;
@@ -104,19 +135,23 @@ export default function App() {
     clientName: ''
   });
 
-  // Sync to API on mount to load sample or backend budgets
+  // Load only the authenticated user's budgets from local storage and API.
   useEffect(() => {
-    fetch('/api/orcamentos')
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0 && budgets.length === 0) {
-          setBudgets(data);
-        }
+    if (!user) {
+      setBudgets([]);
+      return;
+    }
+    setBudgets(loadLocalBudgets(user.id));
+    fetch('/api/orcamentos', {
+      headers: { Authorization: `Bearer ${user.token || localStorage.getItem('construtec_jwt_token') || ''}` }
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Não foi possível carregar os orçamentos da conta.');
+        return response.json();
       })
-      .catch(() => {
-        // Fallback local ok
-      });
-  }, []);
+      .then((data: SavedBudget[]) => setBudgets(data))
+      .catch((error) => console.error('[Orçamentos] Mantendo apenas o histórico local:', error));
+  }, [user?.id]);
 
   // Save to LocalStorage
   useEffect(() => {
@@ -132,8 +167,10 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    localStorage.setItem('construtec_budgets', JSON.stringify(budgets));
-  }, [budgets]);
+    if (user) {
+      localStorage.setItem(`construtec_budgets_${user.id}`, JSON.stringify(budgets));
+    }
+  }, [budgets, user?.id]);
 
   // Handlers
   const handleSelectWorkTypeFromHero = (type: WorkTypeKey) => {
@@ -160,6 +197,7 @@ export default function App() {
   };
 
   const handleLoginSuccess = (newUser: UserProfile) => {
+    setBudgets(loadLocalBudgets(newUser.id));
     setUser(newUser);
     // Redireciona ADMs e ADM Masters diretamente para o Painel Administrativo com modo de teste desligado
     if (newUser.userType === 'ADM' || newUser.userType === 'ADM_MASTER' || newUser.userType === 'PROPRIETARIO') {
@@ -171,6 +209,7 @@ export default function App() {
 
   const handleLogout = () => {
     AuthService.logout();
+    setBudgets([]);
     setUser(null);
     setIsUserTestMode(false);
     setActiveTab('home');
@@ -180,9 +219,16 @@ export default function App() {
     setBudgets((prev) => [newBudget, ...prev]);
   };
 
-  const handleDeleteBudget = (id: string) => {
-    setBudgets((prev) => prev.filter((b) => b.id !== id));
-    fetch(`/api/orcamentos/${id}`, { method: 'DELETE' }).catch(() => {});
+  const handleDeleteBudget = async (id: string) => {
+    const response = await fetch(`/api/orcamentos/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${user?.token || localStorage.getItem('construtec_jwt_token') || ''}` }
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || error.error || 'Não foi possível excluir o orçamento.');
+    }
+    setBudgets((prev) => prev.filter((budget) => budget.id !== id));
   };
 
   const handleViewBudget = (budget: SavedBudget) => {
@@ -221,9 +267,9 @@ export default function App() {
       
       {/* HEADER PRINCIPAL */}
       <Header
-        activeTab={activeTab}
         setActiveTab={setActiveTab}
         user={user}
+        systemName={systemName}
         onOpenAuth={() => handleOpenAuthWithMessage()}
         onLogout={handleLogout}
         currentLocation={currentLocation}
@@ -231,6 +277,7 @@ export default function App() {
         savedBudgetsCount={budgets.length}
         onToggleMobileSidebar={() => setMobileSidebarOpen((prev) => !prev)}
         onOpenChangePassword={() => setChangePasswordModalOpen(true)}
+        onOpenProfile={() => setProfileModalOpen(true)}
         isUserTestMode={isUserTestMode}
         onEnterUserTestMode={handleEnterUserTestMode}
         onExitUserTestMode={handleExitUserTestMode}
@@ -271,6 +318,25 @@ export default function App() {
         <div className="flex-1 flex flex-col min-w-0">
           {/* CONTEÚDO PRINCIPAL RENDERIZADO POR TAB */}
           <main className="flex-1">
+        {activeTab !== 'home' && activeTab !== 'admin' && (
+          <div className="mx-auto max-w-7xl px-4 pt-5 sm:px-6 lg:px-8">
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab === 'calculator' && isUserTestMode) {
+                  handleExitUserTestMode();
+                  return;
+                }
+                setActiveTab('home');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {activeTab === 'calculator' && isUserTestMode ? 'Voltar ao painel ADM' : 'Voltar ao início'}
+            </button>
+          </div>
+        )}
         {activeTab === 'home' && (
           <Hero
             onSelectWorkType={handleSelectWorkTypeFromHero}
@@ -313,6 +379,12 @@ export default function App() {
             location={currentLocation}
             onOpenLocationModal={() => setLocationModalOpen(true)}
           />
+        )}
+
+        {activeTab === 'support' && (
+          <AuthGuard user={user} onOpenAuth={handleOpenAuthWithMessage}>
+            {user && <SupportTickets user={user} />}
+          </AuthGuard>
         )}
 
         {activeTab === 'about' && (
@@ -434,6 +506,15 @@ export default function App() {
         isOpen={changePasswordModalOpen}
         onClose={() => setChangePasswordModalOpen(false)}
         user={user}
+      />
+      <ProfileModal
+        isOpen={profileModalOpen}
+        user={user}
+        onClose={() => setProfileModalOpen(false)}
+        onProfileUpdated={(updatedUser, token) => {
+          AuthService.setSession(updatedUser, token);
+          setUser(updatedUser);
+        }}
       />
 
       {/* MODAL DE SELEÇÃO REGIONAL */}

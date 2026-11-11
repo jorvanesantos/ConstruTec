@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BASE_MATERIALS_CATALOG, REGIONAL_LOCATIONS } from '../data/catalog';
-import { RegionalLocation } from '../types';
+import { PriceCatalogItem, RegionalLocation } from '../types';
 import { 
   PackageCheck, 
   Search, 
@@ -24,6 +24,43 @@ export const MaterialsCatalog: React.FC<MaterialsCatalogProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('todos');
+  const [materials, setMaterials] = useState<PriceCatalogItem[]>(BASE_MATERIALS_CATALOG);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/materiais')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Não foi possível carregar os preços atualizados.');
+        return response.json();
+      })
+      .then((items: Array<{ id: string; name: string; description: string; unit: string; price: number; category: string; updatedAt?: string }>) => {
+        if (!Array.isArray(items)) throw new Error('A resposta do catálogo de materiais é inválida.');
+        if (active) {
+          setMaterials(items.map((item) => ({
+            id: item.id,
+            name: item.name,
+            description: item.description || '',
+            baseUnit: item.unit,
+            commercialUnit: item.unit,
+            basePrice: Number(item.price),
+            category: item.category || 'Geral',
+            updatedAt: item.updatedAt || new Date().toISOString()
+          })));
+          setCatalogError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          console.error('[Catálogo] Falha ao carregar os preços administrados:', error);
+          setCatalogError('Não foi possível atualizar o catálogo. Os valores exibidos são os preços locais de referência.');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const categories = [
     { id: 'todos', label: 'Todos os Materiais' },
@@ -33,10 +70,13 @@ export const MaterialsCatalog: React.FC<MaterialsCatalogProps> = ({
     { id: 'Pisos', label: 'Pisos & Revestimentos' },
     { id: 'Argamassas', label: 'Argamassas & Rejuntes' },
     { id: 'Pintura', label: 'Tintas & Acessórios' },
-    { id: 'Telhados', label: 'Telhas & Coberturas' }
+    { id: 'Telhados', label: 'Telhas & Coberturas' },
+    ...Array.from(new Set<string>(materials.map((material) => material.category)))
+      .filter((category) => !['Alvenaria', 'Aglomerantes', 'Agregados', 'Pisos', 'Argamassas', 'Pintura', 'Telhados'].includes(category))
+      .map((category) => ({ id: category, label: category }))
   ];
 
-  const filteredMaterials = BASE_MATERIALS_CATALOG.filter((mat) => {
+  const filteredMaterials = materials.filter((mat) => {
     const matchesSearch = 
       mat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       mat.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -62,6 +102,12 @@ export const MaterialsCatalog: React.FC<MaterialsCatalogProps> = ({
             Consulte insumos padronizados com preços médios SINAPI atualizados por estado.
           </p>
         </div>
+
+        {catalogError && (
+          <p role="status" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {catalogError}
+          </p>
+        )}
 
         {/* SELECTOR REGIONAL ATIVO */}
         <button
@@ -162,7 +208,7 @@ export const MaterialsCatalog: React.FC<MaterialsCatalogProps> = ({
                 </div>
 
                 <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2 py-1 rounded-md border border-amber-200/60 dark:border-amber-700/60">
-                  Base SINAPI
+                  Preço base administrado
                 </span>
               </div>
             </div>

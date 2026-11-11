@@ -5,6 +5,7 @@ import {
   RegionalLocation 
 } from '../types';
 import { BASE_MATERIALS_CATALOG, REGIONAL_LOCATIONS } from '../data/catalog';
+import { DEFAULT_CALCULATION_SETTINGS, type CalculationSettings } from './calculationSettings';
 
 function findCatalogItem(id: string) {
   const item = BASE_MATERIALS_CATALOG.find(m => m.id === id);
@@ -13,6 +14,8 @@ function findCatalogItem(id: string) {
   }
   return item;
 }
+
+let activeCalculationSettings: CalculationSettings = DEFAULT_CALCULATION_SETTINGS;
 
 function buildMaterial(
   id: string,
@@ -23,7 +26,8 @@ function buildMaterial(
   purpose?: string
 ): MaterialItem {
   const catalog = findCatalogItem(id);
-  const adjustedPrice = Math.round((catalog.basePrice * location.priceMultiplier) * 100) / 100;
+  const basePrice = activeCalculationSettings.materialPriceOverrides?.[id] ?? catalog.basePrice;
+  const adjustedPrice = Math.round((basePrice * location.priceMultiplier) * 100) / 100;
   const totalPrice = Math.round((quantityCommercial * adjustedPrice) * 100) / 100;
 
   return {
@@ -55,6 +59,7 @@ export class CalculationService {
     windowHeight?: number;
     wastePercentage: number;
     location: RegionalLocation;
+    calculationSettings?: CalculationSettings;
   }): CalculationResult {
     const length = Math.max(0.1, Number(params.length) || 0);
     const height = Math.max(0.1, Number(params.height) || 0);
@@ -68,16 +73,17 @@ export class CalculationService {
     const wasteMultiplier = 1 + (waste / 100);
     const materials: MaterialItem[] = [];
 
-    let blockConsumptionPerM2 = 12.5;
+    const calculationSettings = params.calculationSettings || DEFAULT_CALCULATION_SETTINGS;
+    let blockConsumptionPerM2 = calculationSettings.masonryUnitsPerM2.concreteBlock;
     let blockId = 'mat_bloco_concreto_14';
     let blockName = 'Bloco de Concreto 14x19x39';
 
     if (params.blockType === 'bloco_09') {
-      blockConsumptionPerM2 = 12.5;
+      blockConsumptionPerM2 = calculationSettings.masonryUnitsPerM2.concreteBlock;
       blockId = 'mat_bloco_concreto_09';
       blockName = 'Bloco de Concreto 09x19x39';
     } else if (params.blockType === 'tijolo_8f') {
-      blockConsumptionPerM2 = 25.0;
+      blockConsumptionPerM2 = calculationSettings.masonryUnitsPerM2.ceramicBrick;
       blockId = 'mat_tijolo_ceramico_8f';
       blockName = 'Tijolo Cerâmico 8 Furos 9x19x19';
     }
@@ -147,6 +153,7 @@ export class CalculationService {
     windowHeight?: number;
     wastePercentage: number;
     location: RegionalLocation;
+    calculationSettings?: CalculationSettings;
   }): CalculationResult {
     const length = Math.max(0.1, Number(params.length) || 0);
     const height = Math.max(0.1, Number(params.height) || 0);
@@ -160,12 +167,13 @@ export class CalculationService {
     const wasteMultiplier = 1 + (waste / 100);
     const materials: MaterialItem[] = [];
 
-    let blockConsumptionPerM2 = 12.5;
+    const calculationSettings = params.calculationSettings || DEFAULT_CALCULATION_SETTINGS;
+    let blockConsumptionPerM2 = calculationSettings.masonryUnitsPerM2.concreteBlock;
     let blockId = 'mat_bloco_concreto_14';
     if (params.blockType === 'bloco_09') {
       blockId = 'mat_bloco_concreto_09';
     } else if (params.blockType === 'tijolo_8f') {
-      blockConsumptionPerM2 = 25.0;
+      blockConsumptionPerM2 = calculationSettings.masonryUnitsPerM2.ceramicBrick;
       blockId = 'mat_tijolo_ceramico_8f';
     }
 
@@ -828,28 +836,35 @@ export class CalculationService {
   }
 
   // Master dispatcher
-  static calculate(workType: WorkTypeKey, params: any): CalculationResult {
-    switch (workType) {
-      case 'muro':
-        return this.calculateMuro(params);
-      case 'parede':
-        return this.calculateParede(params);
-      case 'piso':
-        return this.calculatePiso(params);
-      case 'pintura':
-        return this.calculatePintura(params);
-      case 'concreto':
-        return this.calculateConcreto(params);
-      case 'fundacao':
-        return this.calculateFundacao(params);
-      case 'telhado':
-        return this.calculateTelhado(params);
-      case 'revestimento':
-        return this.calculateRevestimento(params);
-      case 'outro':
-        return this.calculateOutro(params);
-      default:
-        throw new Error(`Tipo de obra não suportado: ${workType}`);
+  static calculate(workType: WorkTypeKey, params: any, calculationSettings: CalculationSettings = DEFAULT_CALCULATION_SETTINGS): CalculationResult {
+    const previousSettings = activeCalculationSettings;
+    activeCalculationSettings = calculationSettings;
+    const calculationParams = { ...params, calculationSettings };
+    try {
+      switch (workType) {
+        case 'muro':
+          return this.calculateMuro(calculationParams);
+        case 'parede':
+          return this.calculateParede(calculationParams);
+        case 'piso':
+          return this.calculatePiso(calculationParams);
+        case 'pintura':
+          return this.calculatePintura(calculationParams);
+        case 'concreto':
+          return this.calculateConcreto(calculationParams);
+        case 'fundacao':
+          return this.calculateFundacao(calculationParams);
+        case 'telhado':
+          return this.calculateTelhado(calculationParams);
+        case 'revestimento':
+          return this.calculateRevestimento(calculationParams);
+        case 'outro':
+          return this.calculateOutro(calculationParams);
+        default:
+          throw new Error(`Tipo de obra não suportado: ${workType}`);
+      }
+    } finally {
+      activeCalculationSettings = previousSettings;
     }
   }
 }

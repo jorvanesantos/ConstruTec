@@ -4,10 +4,14 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
-import mysql from 'mysql2/promise';
+import type { Pool, ResultSetHeader } from 'mysql2/promise';
 import jwt from 'jsonwebtoken';
 import { CalculationService } from './src/services/calculationEngine';
 import { BASE_MATERIALS_CATALOG, REGIONAL_LOCATIONS, WORK_TYPES } from './src/data/catalog';
+import { createMysqlPool, databaseConfig } from './src/config/database';
+import { createSavedCalculationsRouter } from './src/routes/savedCalculations.routes';
+import { DEFAULT_CALCULATION_SETTINGS, isCalculationSettings, type CalculationSettings } from './src/services/calculationSettings';
+import { DEFAULT_SYSTEM_SETTINGS, isSystemSettings, type SystemSettings } from './src/services/systemSettings';
 import { 
   WorkTypeKey, 
   SavedBudget, 
@@ -16,6 +20,8 @@ import {
   AdminMaterial, 
   AdminWorkType, 
   AdminUserWork, 
+  SupportTicket,
+  SupportTicketStatus,
   SystemAuditLog 
 } from './src/types';
 
@@ -23,34 +29,92 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '3000');
 
 // Configurações do Banco de Dados MySQL
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_PORT = parseInt(process.env.DB_PORT || '3306');
-const DB_USER = process.env.DB_USER || 'root';
-const DB_PASSWORD = process.env.DB_PASSWORD || '';
-const DB_NAME = process.env.DB_NAME || 'construtec_ia';
-const JWT_SECRET = process.env.JWT_SECRET || 'coloque_uma_chave_aqui';
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET é obrigatório em produção.');
+}
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
 
-let dbPool: mysql.Pool | null = null;
+let dbPool: Pool | null = null;
 let isDbConnected = false;
 let dbConnectionError: string | null = null;
+let calculationSettings: CalculationSettings = DEFAULT_CALCULATION_SETTINGS;
+let systemSettings: SystemSettings = DEFAULT_SYSTEM_SETTINGS;
+
+function mapSupportTicketRow(row: any): SupportTicket {
+  const timestampToIso = (value: unknown) =>
+    value ? new Date(value as string | number | Date).toISOString() : new Date().toISOString();
+  return {
+    id: String(row.id),
+    ownerUserId: String(row.owner_user_id),
+    ownerName: String(row.owner_name || 'Usuário'),
+    ownerEmail: String(row.owner_email || ''),
+    subject: String(row.assunto || ''),
+    message: String(row.mensagem || ''),
+    status: row.status as SupportTicketStatus,
+    response: row.resposta ? String(row.resposta) : undefined,
+    responseBy: row.respondido_por ? String(row.respondido_por) : undefined,
+    createdAt: timestampToIso(row.criado_em),
+    updatedAt: timestampToIso(row.atualizado_em)
+  };
+}
+
+async function persistMaterialAndCalculationSettings(
+  material: AdminMaterial,
+  updatedSettings: CalculationSettings
+): Promise<boolean> {
+  if (!isDbConnected || !dbPool) return false;
+
+  const connection = await dbPool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute(
+      `INSERT INTO materiais
+        (codigo, nome, categoria, unidade_base, unidade_comercial, unidade, preco, quantidade_minima, descricao, status, ativo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+        nome = VALUES(nome), categoria = VALUES(categoria), unidade_base = VALUES(unidade_base),
+        unidade_comercial = VALUES(unidade_comercial), unidade = VALUES(unidade),
+        preco = VALUES(preco), quantidade_minima = VALUES(quantidade_minima),
+        descricao = VALUES(descricao), status = VALUES(status), ativo = VALUES(ativo)`,
+      [
+        material.id,
+        material.name,
+        material.category,
+        material.unit,
+        material.unit,
+        material.unit,
+        material.price,
+        material.minQuantity,
+        material.description,
+        material.status,
+        material.status === 'ativo'
+      ]
+    );
+    await connection.execute(
+      `INSERT INTO configuracoes_sistema (chave, valor_json) VALUES ('calculation_settings', ?)
+       ON DUPLICATE KEY UPDATE valor_json = VALUES(valor_json)`,
+      [JSON.stringify(updatedSettings)]
+    );
+    await connection.commit();
+    calculationSettings = updatedSettings;
+    return true;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
 
 // Inicializa a conexão com o MySQL
 async function initDatabase() {
   try {
     // 1. Tenta inicializar/criar a base de dados se necessário
-    const setupPool = mysql.createPool({
-      host: DB_HOST,
-      port: DB_PORT,
-      user: DB_USER,
-      password: DB_PASSWORD,
-      waitForConnections: true,
-      connectionLimit: 2,
-      connectTimeout: 3000
-    });
+    const setupPool = createMysqlPool();
 
     try {
       const setupConn = await setupPool.getConnection();
-      await setupConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+      await setupConn.query(`CREATE DATABASE IF NOT EXISTS \`${databaseConfig.name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
       setupConn.release();
     } catch (e) {
       // Ignora erro se não tiver permissão de criar banco
@@ -59,31 +123,21 @@ async function initDatabase() {
     }
 
     // 2. Conecta ao banco de dados especificado
-    dbPool = mysql.createPool({
-      host: DB_HOST,
-      port: DB_PORT,
-      user: DB_USER,
-      password: DB_PASSWORD,
-      database: DB_NAME,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-      connectTimeout: 4000
-    });
+    dbPool = createMysqlPool(databaseConfig.name);
 
     const conn = await dbPool.getConnection();
     await conn.ping();
     conn.release();
     isDbConnected = true;
     dbConnectionError = null;
-    console.log(`[MySQL] Conectado com sucesso ao banco '${DB_NAME}' em ${DB_HOST}:${DB_PORT} (usuário: ${DB_USER})!`);
+    console.log(`[MySQL] Conectado com sucesso ao banco '${databaseConfig.name}' em ${databaseConfig.host}:${databaseConfig.port} (usuário: ${databaseConfig.user})!`);
 
     await ensureDatabaseSchema();
     await syncDataFromMySQL();
   } catch (err: any) {
     isDbConnected = false;
     dbConnectionError = err.message || 'Erro de conexão';
-    console.log(`[MySQL] Banco local '${DB_NAME}' não conectado (${err.code || err.message}).`);
+    console.log(`[MySQL] Banco local '${databaseConfig.name}' não conectado (${err.code || err.message}).`);
     console.log(`[MySQL] O servidor está operando com armazenamento em memória com fallback automático e total persistência durante a sessão.`);
   }
 }
@@ -112,7 +166,7 @@ async function syncDataFromMySQL() {
             city: r.cidade_padrao || 'São Paulo',
             uf: r.uf_padrao || 'SP'
           }));
-          console.log(`[MySQL] Sincronizados ${usersStore.length} usuários da base relacional construtec_ia.`);
+          console.log(`[MySQL] Sincronizados ${usersStore.length} usuários da base relacional ${databaseConfig.name}.`);
         }
       }
     } catch (uErr: any) {
@@ -123,17 +177,22 @@ async function syncDataFromMySQL() {
     try {
       const [mRows]: any = await dbPool.query('SELECT * FROM materiais');
       if (Array.isArray(mRows) && mRows.length > 0) {
-        materialsStore = mRows.map((r: any, idx: number) => ({
-          id: String(r.id || r.codigo || idx + 1),
+        materialsStore = mRows.map((r: any, idx: number) => {
+          const code = String(r.codigo || r.id || idx + 1);
+          const catalogItem = BASE_MATERIALS_CATALOG.find((item) => item.id === code);
+          const storedPrice = Number.parseFloat(r.preco);
+          return {
+          id: code,
           name: r.nome || 'Material',
           description: r.descricao || '',
-          unit: r.unidade || r.unidade_base || 'unidade',
-          price: parseFloat(r.preco) || 0,
+          unit: r.unidade_comercial || r.unidade || r.unidade_base || 'unidade',
+          price: Number.isFinite(storedPrice) && storedPrice > 0 ? storedPrice : catalogItem?.basePrice || 0,
           minQuantity: parseInt(r.quantidade_minima) || 10,
           status: (r.status || (r.ativo ? 'ativo' : 'inativo')) as 'ativo' | 'inativo',
           category: r.categoria || 'Geral',
           updatedAt: r.criado_em || new Date().toISOString()
-        }));
+        };
+        });
         console.log(`[MySQL] Sincronizados ${materialsStore.length} materiais da base relacional.`);
       }
     } catch (mErr: any) {
@@ -159,6 +218,32 @@ async function syncDataFromMySQL() {
     } catch (hErr: any) {
       console.warn('[MySQL] Aviso ao sincronizar histórico:', hErr.message);
     }
+
+    try {
+      const [settingsRows]: any = await dbPool.query(
+        "SELECT valor_json FROM configuracoes_sistema WHERE chave = 'calculation_settings' LIMIT 1"
+      );
+      if (settingsRows.length > 0) {
+        const stored = typeof settingsRows[0].valor_json === 'string'
+          ? JSON.parse(settingsRows[0].valor_json)
+          : settingsRows[0].valor_json;
+        if (isCalculationSettings(stored)) calculationSettings = stored;
+      }
+    } catch (settingsError: any) {
+      console.warn('[MySQL] Aviso ao carregar configurações de cálculo:', settingsError.message);
+    }
+
+    try {
+      const [systemRows]: any = await dbPool.query(
+        "SELECT valor_json FROM configuracoes_sistema WHERE chave = 'system_settings' LIMIT 1"
+      );
+      if (systemRows.length > 0) {
+        const stored = typeof systemRows[0].valor_json === 'string' ? JSON.parse(systemRows[0].valor_json) : systemRows[0].valor_json;
+        if (isSystemSettings(stored)) systemSettings = stored;
+      }
+    } catch (settingsError: any) {
+      console.warn('[MySQL] Aviso ao carregar configurações do sistema:', settingsError.message);
+    }
   } catch (err: any) {
     console.warn('[MySQL] Aviso durante sincronização inicial:', err.message);
   }
@@ -181,6 +266,13 @@ async function ensureDatabaseSchema() {
         ativo BOOLEAN DEFAULT TRUE,
         criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB;
+    `);
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS configuracoes_sistema (
+        chave VARCHAR(100) PRIMARY KEY,
+        valor_json JSON NOT NULL,
+        atualizado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB;
     `);
 
@@ -216,10 +308,27 @@ async function ensureDatabaseSchema() {
         criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB;
     `);
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS suporte_chamados (
+        id VARCHAR(80) PRIMARY KEY,
+        owner_user_id VARCHAR(80) NOT NULL,
+        owner_name VARCHAR(150) NOT NULL,
+        owner_email VARCHAR(180) NOT NULL,
+        assunto VARCHAR(150) NOT NULL,
+        mensagem TEXT NOT NULL,
+        status ENUM('aberto', 'em_atendimento', 'respondido', 'fechado') NOT NULL DEFAULT 'aberto',
+        resposta TEXT NULL,
+        respondido_por VARCHAR(150) NULL,
+        criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        atualizado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_suporte_owner_status (owner_user_id, status)
+      ) ENGINE=InnoDB;
+    `);
 
     await dbPool.query(`
       CREATE TABLE IF NOT EXISTS orcamentos (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        owner_user_id VARCHAR(80) NULL,
         titulo VARCHAR(150) NOT NULL,
         cliente_nome VARCHAR(150) NULL,
         tipo_obra VARCHAR(50) NOT NULL,
@@ -231,13 +340,51 @@ async function ensureDatabaseSchema() {
       ) ENGINE=InnoDB;
     `);
 
-    console.log('[MySQL] Tabelas de usuários, histórico, materiais e orçamentos verificadas com sucesso.');
+    await dbPool.query(`
+      CREATE TABLE IF NOT EXISTS calculos (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        owner_user_id VARCHAR(80) NULL,
+        tipo_obra VARCHAR(50) NOT NULL,
+        parametros_json JSON NOT NULL,
+        resultado_json JSON NOT NULL,
+        criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_calculos_tipo_data (tipo_obra, criado_em)
+      ) ENGINE=InnoDB;
+    `);
+
+    const [budgetColumns]: any = await dbPool.query("SHOW COLUMNS FROM orcamentos LIKE 'owner_user_id'");
+    if (budgetColumns.length === 0) {
+      await dbPool.query('ALTER TABLE orcamentos ADD COLUMN owner_user_id VARCHAR(80) NULL');
+    }
+    const budgetCompatibilityColumns = [
+      ['cliente_nome', 'VARCHAR(150) NULL'],
+      ['tipo_obra', 'VARCHAR(50) NULL'],
+      ['custo_total_estimado', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00'],
+      ['dados_localizacao', 'JSON NULL'],
+      ['resultado_calculo', 'JSON NULL']
+    ] as const;
+    for (const [column, definition] of budgetCompatibilityColumns) {
+      const [columns]: any = await dbPool.query(`SHOW COLUMNS FROM orcamentos LIKE '${column}'`);
+      if (columns.length === 0) {
+        await dbPool.query(`ALTER TABLE orcamentos ADD COLUMN ${column} ${definition}`);
+      }
+    }
+    const [calculationColumns]: any = await dbPool.query("SHOW COLUMNS FROM calculos LIKE 'owner_user_id'");
+    if (calculationColumns.length === 0) {
+      await dbPool.query('ALTER TABLE calculos ADD COLUMN owner_user_id VARCHAR(80) NULL');
+    }
+
+    console.log('[MySQL] Tabelas de usuários, histórico, materiais, orçamentos e cálculos verificadas com sucesso.');
   } catch (err: any) {
     console.warn('[MySQL] Aviso de verificação de schema:', err.message);
   }
 }
 
 app.use(express.json());
+app.use('/api/calculos/salvos', authenticateToken, createSavedCalculationsRouter({
+  getPool: () => dbPool,
+  isConnected: () => isDbConnected
+}));
 
 // -------------------------------------------------------------
 // SEGURANÇA CRIPTOGRÁFICA DE SENHAS ÚNICAS (SHA-256 + SALT)
@@ -258,6 +405,15 @@ function verifyPassword(providedPassword: string, storedHashOrPlain?: string): b
   // 3. Confere hash padrão para credencial inicial 123456
   if (storedHashOrPlain === hashPassword('123456') && provided === '123456') return true;
   return false;
+}
+
+function isMasterUser(user: Pick<AdminUser, 'userType'> | undefined): boolean {
+  return user?.userType === 'ADM_MASTER' || user?.userType === 'PROPRIETARIO';
+}
+
+function toPublicUser(user: AdminUser) {
+  const { password, passwordHash, ...safeUser } = user;
+  return safeUser;
 }
 
 // -------------------------------------------------------------
@@ -428,6 +584,18 @@ let materialsStore: AdminMaterial[] = [
   }
 ];
 
+materialsStore = BASE_MATERIALS_CATALOG.map((material) => ({
+  id: material.id,
+  name: material.name,
+  description: material.description,
+  unit: material.commercialUnit,
+  price: material.basePrice,
+  minQuantity: 10,
+  status: 'ativo',
+  category: material.category,
+  updatedAt: material.updatedAt
+}));
+
 // 3. Tipos de Construção (controlados pelo ADM)
 let workTypesStore: AdminWorkType[] = [
   {
@@ -581,6 +749,8 @@ let userWorksStore: AdminUserWork[] = [
   }
 ];
 
+let supportTicketsStore: SupportTicket[] = [];
+
 // 5. Histórico do sistema (Auditoria) com ações requeridas:
 // LOGIN, CRIAR_CALCULO, EDITAR_OBRA, EXCLUIR_OBRA, CADASTRAR_USUARIO, EDITAR_MATERIAL, CADASTRAR_ADM, etc.
 let auditLogsStore: SystemAuditLog[] = [
@@ -669,14 +839,15 @@ async function recordAuditLog(
   // Grava no MySQL se conectado
   if (isDbConnected && dbPool) {
     try {
+      const numericUserId = user?.id && /^\d+$/.test(user.id) ? Number(user.id) : null;
       await dbPool.query(
         `INSERT INTO historico (usuario_id, usuario_nome, usuario_email, tipo_usuario, acao, descricao, ip_origem)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
-          user?.id ? 1 : null,
+          numericUserId,
           newLog.userName,
           newLog.userEmail || null,
-          newLog.userType,
+          newLog.userType === 'ADM_MASTER' ? 'PROPRIETARIO' : newLog.userType,
           newLog.action,
           newLog.description,
           ip
@@ -793,7 +964,24 @@ function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextF
         message: 'Token inválido ou sessão expirada. Faça login novamente.'
       });
     }
-    req.user = decoded;
+    const currentUser = usersStore.find(user => user.id === String(decoded.id) && user.email.toLowerCase() === String(decoded.email).toLowerCase());
+    if (!currentUser) {
+      return res.status(401).json({ error: 'Sessão inválida.', message: 'A conta associada a esta sessão não está mais disponível.' });
+    }
+    if (!currentUser.active) {
+      return res.status(403).json({ error: 'Conta desativada.', message: 'Entre em contato com a administração.' });
+    }
+    const userType = currentUser.userType === 'PROPRIETARIO' ? 'ADM_MASTER' : currentUser.userType;
+    if (userType !== 'USUARIO' && userType !== 'ADM' && userType !== 'ADM_MASTER') {
+      return res.status(403).json({ error: 'Perfil de conta inválido.' });
+    }
+    req.user = {
+      id: currentUser.id,
+      email: currentUser.email,
+      name: currentUser.name,
+      userType,
+      role: currentUser.role
+    };
     next();
   });
 }
@@ -845,10 +1033,10 @@ app.get('/api/health', (req: Request, res: Response) => {
     version: '2.0.0',
     database: {
       connected: isDbConnected,
-      host: DB_HOST,
-      port: DB_PORT,
-      database: DB_NAME,
-      user: DB_USER,
+      host: databaseConfig.host,
+      port: databaseConfig.port,
+      database: databaseConfig.name,
+      user: databaseConfig.user,
       error: dbConnectionError
     },
     timestamp: new Date().toISOString()
@@ -856,7 +1044,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 });
 
 // GET /api/status-banco - Diagnóstico de conexão com MySQL
-app.get('/api/status-banco', async (req: Request, res: Response) => {
+app.get('/api/status-banco', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   let pingOk = false;
   if (dbPool && isDbConnected) {
     try {
@@ -874,13 +1062,13 @@ app.get('/api/status-banco', async (req: Request, res: Response) => {
   res.json({
     sucesso: pingOk || isDbConnected,
     mensagem: (pingOk || isDbConnected)
-      ? `Conectado com sucesso ao MySQL '${DB_NAME}' em ${DB_HOST}:${DB_PORT}!`
-      : `Banco de dados MySQL local não respondeu em ${DB_HOST}:${DB_PORT}. O sistema está operando em memória com segurança ativa no backend.`,
+      ? `Conectado com sucesso ao MySQL '${databaseConfig.name}' em ${databaseConfig.host}:${databaseConfig.port}!`
+      : `Banco de dados MySQL local não respondeu em ${databaseConfig.host}:${databaseConfig.port}. O sistema está operando em memória com segurança ativa no backend.`,
     configuracao: {
-      host: DB_HOST,
-      port: DB_PORT,
-      user: DB_USER,
-      database: DB_NAME
+      host: databaseConfig.host,
+      port: databaseConfig.port,
+      user: databaseConfig.user,
+      database: databaseConfig.name
     },
     modo_armazenamento: (pingOk || isDbConnected) ? 'MySQL Relacional Ativo' : 'Memória com Fallback Seguro',
     tabelas_esperadas: ['usuarios', 'historico', 'materiais', 'orcamentos', 'localizacoes', 'tipos_obra'],
@@ -890,19 +1078,19 @@ app.get('/api/status-banco', async (req: Request, res: Response) => {
 });
 
 // POST /api/conectar-banco - Força teste de conexão e sincronização com MySQL
-app.post('/api/conectar-banco', async (req: Request, res: Response) => {
+app.post('/api/conectar-banco', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   await initDatabase();
   await syncDataFromMySQL();
   res.json({
     sucesso: isDbConnected,
     mensagem: isDbConnected
-      ? `Conectado com sucesso ao MySQL '${DB_NAME}' em ${DB_HOST}:${DB_PORT}! Dados sincronizados com sucesso.`
-      : `Não foi possível conectar ao MySQL em ${DB_HOST}:${DB_PORT} (${dbConnectionError || 'Falha de conexão'}).`,
+      ? `Conectado com sucesso ao MySQL '${databaseConfig.name}' em ${databaseConfig.host}:${databaseConfig.port}! Dados sincronizados com sucesso.`
+      : `Não foi possível conectar ao MySQL em ${databaseConfig.host}:${databaseConfig.port} (${dbConnectionError || 'Falha de conexão'}).`,
     configuracao: {
-      host: DB_HOST,
-      port: DB_PORT,
-      user: DB_USER,
-      database: DB_NAME
+      host: databaseConfig.host,
+      port: databaseConfig.port,
+      user: databaseConfig.user,
+      database: databaseConfig.name
     }
   });
 });
@@ -1011,7 +1199,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   res.json({
     token,
     user: {
-      ...foundUser,
+      ...toPublicUser(foundUser),
       userType: safeUserType,
       isLoggedIn: true,
       defaultLocation: REGIONAL_LOCATIONS[0]
@@ -1061,7 +1249,7 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
   const hashedPassword = hashPassword(password);
 
   const newUser: AdminUser = {
-    id: `usr_${Date.now()}`,
+    id: `usr_${crypto.randomUUID()}`,
     name: name.trim(),
     email: cleanEmail,
     passwordHash: hashedPassword,
@@ -1108,7 +1296,7 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
   res.status(201).json({
     token,
     user: {
-      ...newUser,
+      ...toPublicUser(newUser),
       isLoggedIn: true,
       defaultLocation: REGIONAL_LOCATIONS[0]
     }
@@ -1117,66 +1305,11 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
 
 // POST /api/auth/google
 app.post('/api/auth/google', async (req: Request, res: Response) => {
-  const { email, name, avatarUrl } = req.body || {};
-
-  let targetUser: AdminUser | undefined;
-
-  if (email && typeof email === 'string') {
-    const cleanEmail = email.trim().toLowerCase();
-    targetUser = usersStore.find(u => u.email.toLowerCase() === cleanEmail);
-
-    if (!targetUser) {
-      targetUser = {
-        id: 'usr_google_' + Date.now(),
-        name: name && typeof name === 'string' ? name.trim() : cleanEmail.split('@')[0],
-        email: cleanEmail,
-        userType: 'USUARIO',
-        role: 'cliente',
-        active: true,
-        createdAt: new Date().toISOString(),
-        avatarUrl: avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || cleanEmail)}&background=4285F4&color=fff`
-      };
-      usersStore.push(targetUser);
-    }
-  } else {
-    targetUser = usersStore.find(u => u.email === 'carlos.engenharia@gmail.com') || {
-      id: 'usr_google_123',
-      name: 'Carlos Silva (Engenheiro)',
-      email: 'carlos.engenharia@gmail.com',
-      userType: 'ADM',
-      role: 'engenheiro',
-      active: true,
-      createdAt: '2026-02-01T08:30:00.000Z',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'
-    };
-  }
-
-  const token = jwt.sign(
-    { 
-      id: targetUser.id, 
-      email: targetUser.email, 
-      name: targetUser.name, 
-      userType: targetUser.userType, 
-      role: targetUser.role 
-    },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-
-  await recordAuditLog('LOGIN', `Login via Google por ${targetUser.name} [${targetUser.userType}].`, targetUser, req);
-
-  res.json({
-    token,
-    user: {
-      ...targetUser,
-      isLoggedIn: true,
-      defaultLocation: REGIONAL_LOCATIONS[0]
-    }
+  res.status(501).json({
+    error: 'Login Google indisponível.',
+    message: 'A integração OAuth ainda não está configurada; informe uma credencial verificada antes de habilitar este acesso.'
   });
 });
-
-// Armazenamento em memória para códigos temporários de recuperação de senha (expiram em 15 minutos)
-const passwordResetStore = new Map<string, { code: string; expiresAt: number }>();
 
 // POST /api/auth/alterar-senha - Alterar senha do usuário autenticado para garantir senha única
 app.post('/api/auth/alterar-senha', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
@@ -1234,6 +1367,41 @@ app.post('/api/auth/alterar-senha', authenticateToken, async (req: Authenticated
   }
 });
 
+app.patch('/api/auth/profile', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { name, email } = req.body ?? {};
+  if (typeof name !== 'string' || name.trim().length < 2) {
+    return res.status(400).json({ error: 'Informe um nome com pelo menos 2 caracteres.' });
+  }
+  if (typeof email !== 'string' || !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email.trim())) {
+    return res.status(400).json({ error: 'Informe um endereço de e-mail válido.' });
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const currentUser = usersStore.find(user => user.id === req.user!.id);
+  if (!currentUser) return res.status(404).json({ error: 'Usuário não encontrado.' });
+  if (usersStore.some(user => user.id !== currentUser.id && user.email.toLowerCase() === normalizedEmail)) {
+    return res.status(409).json({ error: 'Este e-mail já está sendo usado por outra conta.' });
+  }
+
+  if (isDbConnected && dbPool) {
+    try {
+      await dbPool.execute('UPDATE usuarios SET nome = ?, email = ? WHERE id = ?', [name.trim(), normalizedEmail, currentUser.id]);
+    } catch (error) {
+      console.error('[MySQL] Erro ao atualizar perfil:', error);
+      return res.status(500).json({ error: 'Não foi possível salvar as alterações do perfil.' });
+    }
+  }
+
+  currentUser.name = name.trim();
+  currentUser.email = normalizedEmail;
+  const token = jwt.sign(
+    { id: currentUser.id, email: currentUser.email, name: currentUser.name, userType: isMasterUser(currentUser) ? 'ADM_MASTER' : currentUser.userType, role: currentUser.role },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+  await recordAuditLog('EDITAR_USUARIO', 'O usuário atualizou seu próprio perfil.', currentUser, req);
+  res.json({ token, user: { ...toPublicUser(currentUser), isLoggedIn: true, defaultLocation: REGIONAL_LOCATIONS[0] } });
+});
+
 // POST /api/auth/recuperar-senha/solicitar - Solicitar código de recuperação de senha
 app.post('/api/auth/recuperar-senha/solicitar', async (req: Request, res: Response) => {
   try {
@@ -1243,44 +1411,9 @@ app.post('/api/auth/recuperar-senha/solicitar', async (req: Request, res: Respon
       return res.status(400).json({ error: 'O e-mail é obrigatório para recuperação.' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    if (!emailRegex.test(cleanEmail)) {
-      return res.status(400).json({ error: 'Formato de e-mail inválido. Utilize nome@dominio.com.' });
-    }
-
-    // Sincroniza dados com MySQL antes de checar se o usuário existe
-    if (isDbConnected && dbPool) {
-      await syncDataFromMySQL();
-    }
-
-    const foundUser = usersStore.find(u => u.email.toLowerCase() === cleanEmail);
-    if (!foundUser) {
-      return res.status(404).json({
-        error: 'E-mail não encontrado',
-        message: 'Não encontramos nenhuma conta cadastrada com este endereço de e-mail. Verifique a digitação ou crie uma nova conta.'
-      });
-    }
-
-    if (!foundUser.active) {
-      return res.status(403).json({
-        error: 'Conta desativada',
-        message: 'Esta conta está inativa. Entre em contato com a administração.'
-      });
-    }
-
-    // Gera código seguro de 6 dígitos
-    const securityCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutos
-    passwordResetStore.set(cleanEmail, { code: securityCode, expiresAt });
-
-    await recordAuditLog('LOGIN', `Código de recuperação de senha solicitado para: ${cleanEmail}.`, foundUser, req);
-
-    res.json({
-      sucesso: true,
-      message: `Código de verificação enviado com sucesso para ${cleanEmail}.`,
-      codigo: securityCode, // Fornecido para exibição em tela imediata e facilidade de teste
-      email: cleanEmail
+    return res.status(503).json({
+      error: 'Recuperação indisponível',
+      message: 'A recuperação de senha por e-mail ainda não está configurada. Entre em contato com um administrador.'
     });
   } catch (err: any) {
     res.status(500).json({ error: 'Erro ao solicitar recuperação', message: err.message });
@@ -1289,77 +1422,10 @@ app.post('/api/auth/recuperar-senha/solicitar', async (req: Request, res: Respon
 
 // POST /api/auth/recuperar-senha/redefinir - Redefinir senha com o código verificado
 app.post('/api/auth/recuperar-senha/redefinir', async (req: Request, res: Response) => {
-  try {
-    const { email, code, newPassword } = req.body;
-
-    if (!email || !code || !newPassword) {
-      return res.status(400).json({ error: 'E-mail, código e nova senha são obrigatórios.' });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (typeof newPassword !== 'string' || newPassword.length < 6) {
-      return res.status(400).json({ error: 'A nova senha deve ter no mínimo 6 caracteres.' });
-    }
-
-    // Sincroniza com banco
-    if (isDbConnected && dbPool) {
-      await syncDataFromMySQL();
-    }
-
-    const foundUser = usersStore.find(u => u.email.toLowerCase() === cleanEmail);
-    if (!foundUser) {
-      return res.status(404).json({ error: 'E-mail não encontrado no sistema.' });
-    }
-
-    const resetData = passwordResetStore.get(cleanEmail);
-    if (!resetData) {
-      return res.status(400).json({ 
-        error: 'Código não encontrado', 
-        message: 'Nenhum código ativo encontrado para este e-mail. Solicite um novo código de verificação.' 
-      });
-    }
-
-    if (Date.now() > resetData.expiresAt) {
-      passwordResetStore.delete(cleanEmail);
-      return res.status(400).json({ 
-        error: 'Código expirado', 
-        message: 'O código de verificação expirou (validade de 15 minutos). Solicite um novo código.' 
-      });
-    }
-
-    if (resetData.code !== String(code).trim()) {
-      return res.status(400).json({ 
-        error: 'Código incorreto', 
-        message: 'O código de verificação digitado está incorreto. Verifique os 6 dígitos informados.' 
-      });
-    }
-
-    // Atualiza a senha única do usuário
-    const newHash = hashPassword(newPassword);
-    foundUser.passwordHash = newHash;
-    foundUser.password = newHash;
-
-    if (isDbConnected && dbPool) {
-      try {
-        await dbPool.query('UPDATE usuarios SET senha_hash = ? WHERE LOWER(email) = LOWER(?)', [newHash, cleanEmail]);
-      } catch (e: any) {
-        console.warn('[MySQL] Erro ao atualizar senha no banco:', e.message);
-      }
-    }
-
-    // Limpa código usado
-    passwordResetStore.delete(cleanEmail);
-
-    await recordAuditLog('RECUPERAR_SENHA', `Senha redefinida com sucesso para o usuário ${foundUser.name} (${cleanEmail}).`, foundUser, req);
-
-    res.json({
-      sucesso: true,
-      message: 'Senha única redefinida com sucesso! Você já pode entrar com sua nova senha.'
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Erro ao redefinir senha', message: err.message });
-  }
+  res.status(503).json({
+    error: 'Recuperação indisponível',
+    message: 'A recuperação de senha por e-mail ainda não está configurada. Entre em contato com um administrador.'
+  });
 });
 
 // -------------------------------------------------------------
@@ -1389,7 +1455,7 @@ app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req: Authent
       maxProprietarios: 5
     },
     recentObras: userWorksStore.slice(0, 5),
-    recentUsers: usersStore.slice(0, 5),
+    recentUsers: usersStore.slice(0, 5).map(toPublicUser),
     recentActivities: auditLogsStore.slice(0, 8)
   });
 });
@@ -1423,16 +1489,21 @@ app.get('/api/admin/usuarios', authenticateToken, requireAdmin, async (req: Auth
     result = result.filter(u => u.active === isActive);
   }
 
-  res.json(result);
+  if (!isMasterUser(req.user)) {
+    result = result.filter(u => u.userType === 'USUARIO');
+  }
+  res.json(result.map(toPublicUser));
 });
 
 // POST /api/admin/usuarios - Cadastrar ADM ou ADM MASTER (Apenas ADM Master pode fazer)
-app.post('/api/admin/usuarios', authenticateToken, requireOwner, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/usuarios', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { name, email, userType, role, phone, city, uf, password } = req.body;
 
-    if (!name || !email) {
-      return res.status(400).json({ error: 'Nome e e-mail são obrigatórios.' });
+    if (typeof name !== 'string' || name.trim().length < 2 ||
+        typeof email !== 'string' || !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email.trim()) ||
+        typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ error: 'Informe nome, e-mail válido e senha com pelo menos 6 caracteres.' });
     }
 
     const cleanEmail = email.trim().toLowerCase();
@@ -1450,6 +1521,9 @@ app.post('/api/admin/usuarios', authenticateToken, requireOwner, async (req: Aut
     const targetType: UserType = (userType === 'ADM_MASTER' || userType === 'PROPRIETARIO') 
       ? 'ADM_MASTER' 
       : (userType === 'ADM' ? 'ADM' : 'USUARIO');
+    if (!isMasterUser(req.user) && targetType !== 'USUARIO') {
+      return res.status(403).json({ error: 'ADM Normal só pode cadastrar contas de usuários finais.' });
+    }
 
     // REGRA DE NEGÓCIO VITAL: No máximo 5 ADM Masters no sistema
     if (targetType === 'ADM_MASTER') {
@@ -1463,13 +1537,10 @@ app.post('/api/admin/usuarios', authenticateToken, requireOwner, async (req: Aut
     }
 
     // Senha única inicial definida pelo ADM Master ou gerada segura
-    const userPass = (password && typeof password === 'string' && password.trim().length >= 6)
-      ? password.trim()
-      : '123456';
-    const hashedPassword = hashPassword(userPass);
+    const hashedPassword = hashPassword(password);
 
     const newUser: AdminUser = {
-      id: `usr_${Date.now()}`,
+      id: `usr_${crypto.randomUUID()}`,
       name: name.trim(),
       email: cleanEmail,
       passwordHash: hashedPassword,
@@ -1488,7 +1559,7 @@ app.post('/api/admin/usuarios', authenticateToken, requireOwner, async (req: Aut
         const [insertRes]: any = await dbPool.query(
           `INSERT INTO usuarios (nome, email, senha_hash, tipo_usuario, perfil, cidade_padrao, uf_padrao, ativo)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [newUser.name, newUser.email, hashedPassword, newUser.userType, newUser.role, newUser.city, newUser.uf, 1]
+          [newUser.name, newUser.email, hashedPassword, newUser.userType === 'ADM_MASTER' ? 'PROPRIETARIO' : newUser.userType, newUser.role, newUser.city, newUser.uf, 1]
         );
         if (insertRes?.insertId) {
           newUser.id = String(insertRes.insertId);
@@ -1508,7 +1579,7 @@ app.post('/api/admin/usuarios', authenticateToken, requireOwner, async (req: Aut
       req
     );
 
-    res.status(201).json(newUser);
+    res.status(201).json(toPublicUser(newUser));
   } catch (error: any) {
     res.status(500).json({ error: 'Erro ao cadastrar usuário', message: error.message });
   }
@@ -1517,7 +1588,7 @@ app.post('/api/admin/usuarios', authenticateToken, requireOwner, async (req: Aut
 // PUT /api/admin/usuarios/:id - Alterar dados permitidos do usuário
 app.put('/api/admin/usuarios/:id', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
-  const { name, role, phone, city, uf, userType } = req.body;
+  const { name, email, role, phone, city, uf, userType } = req.body;
 
   const index = usersStore.findIndex(u => u.id === id);
   if (index === -1) {
@@ -1525,15 +1596,26 @@ app.put('/api/admin/usuarios/:id', authenticateToken, requireAdmin, async (req: 
   }
 
   const currentUser = usersStore[index];
+  if (!isMasterUser(req.user) && currentUser.userType !== 'USUARIO') {
+    return res.status(403).json({ error: 'ADM Normal só pode editar contas de usuários finais.' });
+  }
+  if (userType !== undefined && !['USUARIO', 'ADM', 'ADM_MASTER', 'PROPRIETARIO'].includes(userType)) {
+    return res.status(400).json({ error: 'Tipo de usuário inválido.' });
+  }
+  if (email !== undefined && (typeof email !== 'string' ||
+      !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email.trim()) ||
+      usersStore.some(user => user.id !== currentUser.id && user.email.toLowerCase() === email.trim().toLowerCase()))) {
+    return res.status(400).json({ error: 'E-mail inválido ou já cadastrado.' });
+  }
 
   // Se houver tentativa de alterar para PROPRIETARIO, somente PROPRIETARIO pode autorizar e com limite de 5
   if (userType && userType !== currentUser.userType) {
-    if (req.user?.userType !== 'PROPRIETARIO') {
+    if (!isMasterUser(req.user)) {
       return res.status(403).json({ error: 'Somente um Proprietário pode alterar o tipo de privilégio de um usuário.' });
     }
 
-    if (userType === 'PROPRIETARIO' && currentUser.userType !== 'PROPRIETARIO') {
-      const activeOwners = usersStore.filter(u => u.userType === 'PROPRIETARIO' && u.active);
+    if ((userType === 'PROPRIETARIO' || userType === 'ADM_MASTER') && !isMasterUser(currentUser)) {
+      const activeOwners = usersStore.filter(u => isMasterUser(u) && u.active);
       if (activeOwners.length >= 5) {
         return res.status(400).json({
           error: 'Limite de proprietários atingido',
@@ -1546,11 +1628,12 @@ app.put('/api/admin/usuarios/:id', authenticateToken, requireAdmin, async (req: 
   usersStore[index] = {
     ...currentUser,
     name: name || currentUser.name,
+    email: email ? email.trim().toLowerCase() : currentUser.email,
     role: role || currentUser.role,
     phone: phone !== undefined ? phone : currentUser.phone,
     city: city || currentUser.city,
     uf: uf || currentUser.uf,
-    userType: (req.user?.userType === 'PROPRIETARIO' && userType) ? userType : currentUser.userType
+    userType: (isMasterUser(req.user) && userType) ? (userType === 'PROPRIETARIO' ? 'ADM_MASTER' : userType) : currentUser.userType
   };
 
   // Atualiza no MySQL relacional
@@ -1558,14 +1641,15 @@ app.put('/api/admin/usuarios/:id', authenticateToken, requireAdmin, async (req: 
     try {
       await dbPool.query(
         `UPDATE usuarios 
-         SET nome = ?, perfil = ?, cidade_padrao = ?, uf_padrao = ?, tipo_usuario = ?
+         SET nome = ?, email = ?, perfil = ?, cidade_padrao = ?, uf_padrao = ?, tipo_usuario = ?
          WHERE id = ? OR email = ?`,
         [
           usersStore[index].name,
+          usersStore[index].email,
           usersStore[index].role,
           usersStore[index].city,
           usersStore[index].uf,
-          usersStore[index].userType,
+          usersStore[index].userType === 'ADM_MASTER' ? 'PROPRIETARIO' : usersStore[index].userType,
           id,
           currentUser.email
         ]
@@ -1582,7 +1666,7 @@ app.put('/api/admin/usuarios/:id', authenticateToken, requireAdmin, async (req: 
     req
   );
 
-  res.json(usersStore[index]);
+  res.json(toPublicUser(usersStore[index]));
 });
 
 // PATCH /api/admin/usuarios/:id/status - Ativar / desativar usuário
@@ -1602,8 +1686,8 @@ app.patch('/api/admin/usuarios/:id/status', authenticateToken, requireAdmin, asy
   }
 
   // Regra de segurança: Apenas Proprietário pode desativar outro ADM ou Proprietário
-  if (target.userType === 'PROPRIETARIO' || target.userType === 'ADM') {
-    if (req.user?.userType !== 'PROPRIETARIO') {
+  if (isMasterUser(target) || target.userType === 'ADM') {
+    if (!isMasterUser(req.user)) {
       return res.status(403).json({ error: 'Apenas um Proprietário pode alterar o status de outro ADM ou Proprietário.' });
     }
   }
@@ -1650,15 +1734,15 @@ app.delete('/api/admin/usuarios/:id', authenticateToken, requireAdmin, async (re
   }
 
   // Apenas Proprietário pode excluir outro Proprietário ou ADM
-  if (target.userType === 'PROPRIETARIO' || target.userType === 'ADM') {
-    if (req.user?.userType !== 'PROPRIETARIO') {
+  if (isMasterUser(target) || target.userType === 'ADM') {
+    if (!isMasterUser(req.user)) {
       return res.status(403).json({ error: 'Somente um Proprietário tem permissão para excluir Administradores ou outros Proprietários.' });
     }
   }
 
   // Não pode excluir se for o único proprietário restante
-  if (target.userType === 'PROPRIETARIO') {
-    const ownersCount = usersStore.filter(u => u.userType === 'PROPRIETARIO').length;
+  if (isMasterUser(target)) {
+    const ownersCount = usersStore.filter(u => isMasterUser(u)).length;
     if (ownersCount <= 1) {
       return res.status(400).json({ error: 'Não é possível excluir o único proprietário do sistema.' });
     }
@@ -1668,11 +1752,15 @@ app.delete('/api/admin/usuarios/:id', authenticateToken, requireAdmin, async (re
   if (isDbConnected && dbPool) {
     try {
       await dbPool.query('DELETE FROM usuarios WHERE id = ? OR email = ?', [id, target.email]);
+      await dbPool.query('DELETE FROM calculos WHERE owner_user_id = ?', [target.id]);
+      await dbPool.query('DELETE FROM orcamentos WHERE owner_user_id = ?', [target.id]);
     } catch (dbErr: any) {
       console.warn('[MySQL] Erro ao excluir usuário no banco:', dbErr.message);
     }
   }
 
+  budgetsStore = budgetsStore.filter(budget => (budget as SavedBudget & { userId?: string }).userId !== target.id);
+  userWorksStore = userWorksStore.filter(work => work.userId !== target.id);
   usersStore.splice(index, 1);
 
   await recordAuditLog(
@@ -1685,6 +1773,31 @@ app.delete('/api/admin/usuarios/:id', authenticateToken, requireAdmin, async (re
   res.json({ success: true, message: `Usuário ${target.name} excluído com sucesso.` });
 });
 
+app.post('/api/admin/usuarios/:id/reset-password', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const target = usersStore.find(user => user.id === req.params.id);
+  if (!target) return res.status(404).json({ error: 'Usuário não encontrado.' });
+  if (!isMasterUser(req.user) && target.userType !== 'USUARIO') {
+    return res.status(403).json({ error: 'ADM Normal só pode redefinir a senha de usuários finais.' });
+  }
+
+  const temporaryPassword = crypto.randomBytes(9).toString('base64url');
+  const passwordHash = hashPassword(temporaryPassword);
+  target.passwordHash = passwordHash;
+  target.password = passwordHash;
+
+  if (isDbConnected && dbPool) {
+    try {
+      await dbPool.query('UPDATE usuarios SET senha_hash = ? WHERE id = ?', [passwordHash, target.id]);
+    } catch (error) {
+      console.error('[MySQL] Erro ao redefinir senha de usuário:', error);
+      return res.status(500).json({ error: 'Não foi possível persistir a senha redefinida.' });
+    }
+  }
+
+  await recordAuditLog('RECUPERAR_SENHA', `Senha redefinida por ${req.user?.name} para a conta ${target.email}.`, req.user, req);
+  res.json({ temporaryPassword, message: 'Senha temporária gerada. Compartilhe-a com o usuário por um canal seguro.' });
+});
+
 // 3. Tipos de Construção (Controlados pelo ADM)
 // GET /api/admin/tipos-obra - Listar tipos
 app.get('/api/admin/tipos-obra', authenticateToken, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
@@ -1692,7 +1805,7 @@ app.get('/api/admin/tipos-obra', authenticateToken, requireAdmin, (req: Authenti
 });
 
 // POST /api/admin/tipos-obra - Adicionar tipo
-app.post('/api/admin/tipos-obra', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/tipos-obra', authenticateToken, requireOwner, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { name, code, description, category, defaultWaste, icon } = req.body;
 
@@ -1707,7 +1820,7 @@ app.post('/api/admin/tipos-obra', authenticateToken, requireAdmin, async (req: A
     }
 
     const newWorkType: AdminWorkType = {
-      id: `wt_${Date.now()}`,
+      id: `wt_${crypto.randomUUID()}`,
       code: resolvedCode,
       name,
       description: description || '',
@@ -1734,7 +1847,7 @@ app.post('/api/admin/tipos-obra', authenticateToken, requireAdmin, async (req: A
 });
 
 // PUT /api/admin/tipos-obra/:id - Editar tipo
-app.put('/api/admin/tipos-obra/:id', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/tipos-obra/:id', authenticateToken, requireOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const index = workTypesStore.findIndex(w => w.id === id);
 
@@ -1764,7 +1877,7 @@ app.put('/api/admin/tipos-obra/:id', authenticateToken, requireAdmin, async (req
 });
 
 // PATCH /api/admin/tipos-obra/:id/status - Ativar / desativar tipo
-app.patch('/api/admin/tipos-obra/:id/status', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/admin/tipos-obra/:id/status', authenticateToken, requireOwner, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const index = workTypesStore.findIndex(w => w.id === id);
 
@@ -1795,23 +1908,30 @@ app.get('/api/admin/materiais', authenticateToken, requireAdmin, (req: Authentic
 app.post('/api/admin/materiais', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { name, description, unit, price, minQuantity, status, category } = req.body;
+    const parsedPrice = Number(price);
 
-    if (!name || !unit || price === undefined) {
+    if (!name?.trim() || !unit?.trim() || !Number.isFinite(parsedPrice) || parsedPrice <= 0 || parsedPrice > 10000000) {
       return res.status(400).json({ error: 'Nome do material, unidade e preço são obrigatórios.' });
     }
 
     const newMaterial: AdminMaterial = {
-      id: `mat_${Date.now()}`,
+      id: `mat_${crypto.randomUUID()}`,
       name: name.trim(),
       description: description || '',
       unit: unit.trim(),
-      price: parseFloat(price) || 0,
-      minQuantity: parseInt(minQuantity) || 10,
+      price: parsedPrice,
+      minQuantity: Number.isInteger(Number(minQuantity)) && Number(minQuantity) > 0 ? Number(minQuantity) : 10,
       status: status === 'inativo' ? 'inativo' : 'ativo',
       category: category || 'Geral',
       updatedAt: new Date().toISOString()
     };
 
+    const updatedSettings: CalculationSettings = {
+      ...calculationSettings,
+      materialPriceOverrides: { ...calculationSettings.materialPriceOverrides }
+    };
+    const persisted = await persistMaterialAndCalculationSettings(newMaterial, updatedSettings);
+    if (!persisted) calculationSettings = updatedSettings;
     materialsStore.unshift(newMaterial);
 
     await recordAuditLog(
@@ -1821,7 +1941,7 @@ app.post('/api/admin/materiais', authenticateToken, requireAdmin, async (req: Au
       req
     );
 
-    res.status(201).json(newMaterial);
+    res.status(201).json({ ...newMaterial, persisted });
   } catch (error: any) {
     res.status(500).json({ error: 'Erro ao cadastrar material', message: error.message });
   }
@@ -1838,26 +1958,49 @@ app.put('/api/admin/materiais/:id', authenticateToken, requireAdmin, async (req:
 
   const { name, description, unit, price, minQuantity, status, category } = req.body;
 
-  materialsStore[index] = {
+  const parsedPrice = price === undefined ? materialsStore[index].price : Number(price);
+  if (!Number.isFinite(parsedPrice) || parsedPrice <= 0 || parsedPrice > 10000000) {
+    return res.status(400).json({ error: 'O preço deve ser maior que zero e menor ou igual a R$ 10.000.000,00.' });
+  }
+
+  const updatedMaterial: AdminMaterial = {
     ...materialsStore[index],
     name: name || materialsStore[index].name,
     description: description !== undefined ? description : materialsStore[index].description,
     unit: unit || materialsStore[index].unit,
-    price: price !== undefined ? parseFloat(price) : materialsStore[index].price,
+    price: parsedPrice,
     minQuantity: minQuantity !== undefined ? parseInt(minQuantity) : materialsStore[index].minQuantity,
     status: status || materialsStore[index].status,
     category: category || materialsStore[index].category,
     updatedAt: new Date().toISOString()
   };
 
-  await recordAuditLog(
-    'EDITAR_MATERIAL',
-    `Material ${materialsStore[index].name} alterado por ${req.user?.name}. Novo preço: R$ ${materialsStore[index].price.toFixed(2)}.`,
-    req.user,
-    req
-  );
+  const catalogMaterial = BASE_MATERIALS_CATALOG.find((material) => material.id === updatedMaterial.id);
+  const updatedSettings: CalculationSettings = {
+    ...calculationSettings,
+    materialPriceOverrides: {
+      ...calculationSettings.materialPriceOverrides,
+      ...(catalogMaterial ? { [catalogMaterial.id]: updatedMaterial.price } : {})
+    }
+  };
 
-  res.json(materialsStore[index]);
+  try {
+    const persisted = await persistMaterialAndCalculationSettings(updatedMaterial, updatedSettings);
+    if (!persisted) calculationSettings = updatedSettings;
+    materialsStore[index] = updatedMaterial;
+
+    await recordAuditLog(
+      'EDITAR_MATERIAL',
+      `Material ${updatedMaterial.name} alterado por ${req.user?.name}. Novo preço: R$ ${updatedMaterial.price.toFixed(2)}.`,
+      req.user,
+      req
+    );
+
+    res.json({ ...updatedMaterial, persisted });
+  } catch (error) {
+    console.error('[MySQL] Erro ao salvar material e preço de cálculo:', error);
+    res.status(500).json({ error: 'Não foi possível salvar o material e atualizar os cálculos.' });
+  }
 });
 
 // PATCH /api/admin/materiais/:id/status - Ativar / desativar material
@@ -1913,6 +2056,72 @@ app.get('/api/admin/obras', authenticateToken, requireAdmin, (req: Authenticated
   });
 });
 
+app.delete('/api/admin/obras/:id', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  if (!isMasterUser(req.user) && !reason) {
+    return res.status(400).json({ error: 'ADM Normal deve informar o motivo da moderação.' });
+  }
+
+  const workIndex = userWorksStore.findIndex(work => work.id === req.params.id);
+  const budgetIndex = budgetsStore.findIndex(budget => budget.id === req.params.id);
+  if (workIndex === -1 && budgetIndex === -1) return res.status(404).json({ error: 'Obra ou relatório não encontrado.' });
+
+  if (isDbConnected && dbPool) {
+    try {
+      await dbPool.execute('DELETE FROM orcamentos WHERE id = ?', [req.params.id]);
+    } catch (error) {
+      console.error('[MySQL] Erro ao moderar orçamento:', error);
+      return res.status(500).json({ error: 'Não foi possível remover o relatório do banco.' });
+    }
+  }
+  const work = workIndex === -1 ? undefined : userWorksStore[workIndex];
+  if (workIndex !== -1) userWorksStore.splice(workIndex, 1);
+  if (budgetIndex !== -1) budgetsStore.splice(budgetIndex, 1);
+  await recordAuditLog(
+    'EXCLUIR_OBRA',
+    `Relatório ${req.params.id} removido por moderação de ${req.user?.name}.${reason ? ` Motivo: ${reason}` : ''}`,
+    req.user,
+    req
+  );
+  res.json({ success: true, ownerUserId: work?.userId });
+});
+
+app.get('/api/admin/calculos', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  if (!isDbConnected || !dbPool) return res.status(503).json({ error: 'MySQL indisponível para consultar o histórico de cálculos.' });
+  try {
+    const [rows]: any = await dbPool.query(
+      'SELECT id, owner_user_id, tipo_obra, criado_em FROM calculos ORDER BY id DESC LIMIT 100'
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('[MySQL] Erro ao consultar histórico de cálculos para moderação:', error);
+    res.status(500).json({ error: 'Não foi possível consultar os cálculos.' });
+  }
+});
+
+app.delete('/api/admin/calculos/:id', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  if (!/^[1-9]\d*$/.test(req.params.id)) return res.status(400).json({ error: 'Identificador de cálculo inválido.' });
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  if (!isMasterUser(req.user) && !reason) {
+    return res.status(400).json({ error: 'ADM Normal deve informar o motivo da moderação.' });
+  }
+  if (!isDbConnected || !dbPool) return res.status(503).json({ error: 'MySQL indisponível para excluir o histórico de cálculos.' });
+  try {
+    const [deleteResult] = await dbPool.execute<ResultSetHeader>('DELETE FROM calculos WHERE id = ?', [req.params.id]);
+    if (deleteResult.affectedRows === 0) return res.status(404).json({ error: 'Cálculo não encontrado.' });
+    await recordAuditLog(
+      'EXCLUIR_OBRA',
+      `Cálculo ${req.params.id} removido por moderação de ${req.user?.name}.${reason ? ` Motivo: ${reason}` : ''}`,
+      req.user,
+      req
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[MySQL] Erro ao remover cálculo:', error);
+    res.status(500).json({ error: 'Não foi possível excluir o cálculo.' });
+  }
+});
+
 // 6. Histórico do sistema (Logs de Auditoria)
 // GET /api/admin/historico - Consultar ações auditadas
 app.get('/api/admin/historico', authenticateToken, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
@@ -1933,6 +2142,78 @@ app.get('/api/admin/historico', authenticateToken, requireAdmin, (req: Authentic
   }
 
   res.json(result);
+});
+
+app.get('/api/admin/chamados', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  if (isDbConnected && dbPool) {
+    try {
+      const [rows]: any = await dbPool.query('SELECT * FROM suporte_chamados ORDER BY atualizado_em DESC LIMIT 200');
+      return res.json(rows.map((row: any) => mapSupportTicketRow(row)));
+    } catch (error) {
+      console.error('[MySQL] Erro ao consultar chamados:', error);
+      return res.status(500).json({ error: 'Não foi possível carregar os chamados.' });
+    }
+  }
+  res.json([...supportTicketsStore].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+});
+
+app.patch('/api/admin/chamados/:id', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const allowedStatuses: SupportTicketStatus[] = ['aberto', 'em_atendimento', 'respondido', 'fechado'];
+  const { status, response } = req.body;
+  if (status !== undefined && !allowedStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Status de chamado inválido.' });
+  }
+  if (response !== undefined && (typeof response !== 'string' || response.trim().length > 5000)) {
+    return res.status(400).json({ error: 'A resposta deve ter até 5.000 caracteres.' });
+  }
+
+  let ticket = supportTicketsStore.find((item) => item.id === req.params.id);
+  if (!ticket && isDbConnected && dbPool) {
+    try {
+      const [rows]: any = await dbPool.execute('SELECT * FROM suporte_chamados WHERE id = ? LIMIT 1', [req.params.id]);
+      if (rows.length > 0) ticket = mapSupportTicketRow(rows[0]);
+    } catch (error) {
+      console.error('[MySQL] Erro ao localizar chamado:', error);
+      return res.status(500).json({ error: 'Não foi possível localizar o chamado.' });
+    }
+  }
+  if (!ticket) return res.status(404).json({ error: 'Chamado não encontrado.' });
+
+  const responseText = response === undefined ? ticket.response : response.trim();
+  const hasNewResponse = typeof response === 'string' && response.trim().length > 0;
+  const updatedTicket: SupportTicket = {
+    ...ticket,
+    status: hasNewResponse && status !== 'fechado' ? 'respondido' : (status || ticket.status),
+    response: responseText,
+    responseBy: hasNewResponse ? req.user?.name : ticket.responseBy,
+    updatedAt: new Date().toISOString()
+  };
+  if (updatedTicket.status === 'respondido' && !updatedTicket.response) {
+    return res.status(400).json({ error: 'Informe uma resposta antes de marcar o chamado como respondido.' });
+  }
+
+  if (isDbConnected && dbPool) {
+    try {
+      await dbPool.execute(
+        'UPDATE suporte_chamados SET status = ?, resposta = ?, respondido_por = ? WHERE id = ?',
+        [updatedTicket.status, updatedTicket.response || null, updatedTicket.responseBy || null, updatedTicket.id]
+      );
+    } catch (error) {
+      console.error('[MySQL] Erro ao atualizar chamado:', error);
+      return res.status(500).json({ error: 'Não foi possível salvar a resposta do chamado.' });
+    }
+  }
+
+  const existingIndex = supportTicketsStore.findIndex((item) => item.id === updatedTicket.id);
+  if (existingIndex === -1) supportTicketsStore.unshift(updatedTicket);
+  else supportTicketsStore[existingIndex] = updatedTicket;
+  await recordAuditLog(
+    'RESPONDER_CHAMADO',
+    `Chamado ${updatedTicket.id} atualizado para ${updatedTicket.status} por ${req.user?.name}.`,
+    req.user,
+    req
+  );
+  res.json({ ...updatedTicket, persisted: isDbConnected });
 });
 
 // -------------------------------------------------------------
@@ -1960,6 +2241,68 @@ app.get('/api/materiais/:id', (req: Request, res: Response) => {
   res.json(item);
 });
 
+app.get('/api/chamados', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'Autenticação necessária.' });
+  if (isDbConnected && dbPool) {
+    try {
+      const [rows]: any = await dbPool.execute(
+        'SELECT * FROM suporte_chamados WHERE owner_user_id = ? ORDER BY atualizado_em DESC',
+        [req.user.id]
+      );
+      return res.json(rows.map((row: any) => mapSupportTicketRow(row)));
+    } catch (error) {
+      console.error('[MySQL] Erro ao consultar chamados do usuário:', error);
+      return res.status(500).json({ error: 'Não foi possível carregar seus chamados.' });
+    }
+  }
+  res.json(
+    supportTicketsStore
+      .filter((ticket) => ticket.ownerUserId === req.user!.id)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  );
+});
+
+app.post('/api/chamados', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) return res.status(401).json({ error: 'Autenticação necessária.' });
+  const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : '';
+  const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+  if (subject.length < 3 || subject.length > 150) {
+    return res.status(400).json({ error: 'O assunto deve conter entre 3 e 150 caracteres.' });
+  }
+  if (message.length < 10 || message.length > 5000) {
+    return res.status(400).json({ error: 'A descrição deve conter entre 10 e 5.000 caracteres.' });
+  }
+
+  const now = new Date().toISOString();
+  const ticket: SupportTicket = {
+    id: `ticket_${crypto.randomUUID()}`,
+    ownerUserId: req.user.id,
+    ownerName: req.user.name,
+    ownerEmail: req.user.email,
+    subject,
+    message,
+    status: 'aberto',
+    createdAt: now,
+    updatedAt: now
+  };
+  if (isDbConnected && dbPool) {
+    try {
+      await dbPool.execute(
+        `INSERT INTO suporte_chamados
+          (id, owner_user_id, owner_name, owner_email, assunto, mensagem, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'aberto')`,
+        [ticket.id, ticket.ownerUserId, ticket.ownerName, ticket.ownerEmail, ticket.subject, ticket.message]
+      );
+    } catch (error) {
+      console.error('[MySQL] Erro ao gravar chamado:', error);
+      return res.status(500).json({ error: 'Não foi possível registrar o chamado.' });
+    }
+  }
+  supportTicketsStore.unshift(ticket);
+  await recordAuditLog('ABRIR_CHAMADO', `Chamado ${ticket.id} aberto: ${ticket.subject}.`, req.user, req);
+  res.status(201).json({ ticket, persisted: isDbConnected });
+});
+
 // GET /api/precos (Regional locations)
 app.get('/api/precos', (req: Request, res: Response) => {
   res.json({
@@ -1968,8 +2311,75 @@ app.get('/api/precos', (req: Request, res: Response) => {
   });
 });
 
+function getEffectiveCalculationSettings(): CalculationSettings {
+  const materialPriceOverrides = { ...calculationSettings.materialPriceOverrides };
+  for (const material of materialsStore) {
+    if (BASE_MATERIALS_CATALOG.some((catalogItem) => catalogItem.id === material.id) && material.price > 0) {
+      materialPriceOverrides[material.id] = material.price;
+    }
+  }
+  return { ...calculationSettings, materialPriceOverrides };
+}
+
+app.get('/api/calculation-settings', (req: Request, res: Response) => {
+  res.json(getEffectiveCalculationSettings());
+});
+
+app.get('/api/system-settings', (req: Request, res: Response) => {
+  res.json(systemSettings);
+});
+
+app.put('/api/admin/system-settings', authenticateToken, requireOwner, async (req: AuthenticatedRequest, res: Response) => {
+  if (!isSystemSettings(req.body)) {
+    return res.status(400).json({ error: 'Nome do sistema ou termos de uso inválidos.' });
+  }
+  if (!isDbConnected || !dbPool) {
+    return res.status(503).json({ error: 'MySQL é necessário para salvar configurações globais.' });
+  }
+  try {
+    await dbPool.execute(
+      `INSERT INTO configuracoes_sistema (chave, valor_json) VALUES ('system_settings', ?)
+       ON DUPLICATE KEY UPDATE valor_json = VALUES(valor_json)`,
+      [JSON.stringify(req.body)]
+    );
+    systemSettings = { systemName: req.body.systemName.trim(), termsOfUse: req.body.termsOfUse.trim() };
+    await recordAuditLog('EDITAR_CONFIGURACAO', `Configurações gerais alteradas por ADM Master ${req.user?.name}.`, req.user, req);
+    res.json({ settings: systemSettings, persisted: true });
+  } catch (error) {
+    console.error('[MySQL] Erro ao salvar configurações gerais:', error);
+    res.status(500).json({ error: 'Não foi possível salvar as configurações gerais.' });
+  }
+});
+
+app.put('/api/admin/calculation-settings', authenticateToken, requireOwner, async (req: AuthenticatedRequest, res: Response) => {
+  const updatedSettings = req.body;
+  if (!isCalculationSettings(updatedSettings)) {
+    return res.status(400).json({
+      error: 'Configuração inválida.',
+      message: 'Desperdício deve ficar entre 0 e 100%; blocos entre 1 e 100 unidades/m²; tijolos entre 1 e 200 unidades/m².'
+    });
+  }
+  if (!isDbConnected || !dbPool) {
+    return res.status(503).json({ error: 'MySQL é necessário para salvar configurações globais de cálculo.' });
+  }
+
+  try {
+    await dbPool.execute(
+      `INSERT INTO configuracoes_sistema (chave, valor_json) VALUES ('calculation_settings', ?)
+       ON DUPLICATE KEY UPDATE valor_json = VALUES(valor_json)`,
+      [JSON.stringify(updatedSettings)]
+    );
+    calculationSettings = updatedSettings;
+    await recordAuditLog('EDITAR_FORMULAS', `Configurações de cálculo alteradas por ADM Master ${req.user?.name}.`, req.user, req);
+    res.json({ settings: calculationSettings, persisted: true });
+  } catch (error) {
+    console.error('[MySQL] Erro ao salvar configurações de cálculo:', error);
+    res.status(500).json({ error: 'Não foi possível salvar as configurações de cálculo.' });
+  }
+});
+
 // POST /api/calculos/:tipo
-app.post('/api/calculos/:tipo', async (req: Request, res: Response) => {
+app.post('/api/calculos/:tipo', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const workType = req.params.tipo as WorkTypeKey;
     const params = req.body;
@@ -1981,10 +2391,12 @@ app.post('/api/calculos/:tipo', async (req: Request, res: Response) => {
 
     const calculationParams = {
       ...params,
+      wastePercentage: params.wastePercentage ?? calculationSettings.defaultWasteByWorkType[workType],
       location
     };
 
-    const result = CalculationService.calculate(workType, calculationParams);
+    const effectiveSettings = getEffectiveCalculationSettings();
+    const result = CalculationService.calculate(workType, calculationParams, effectiveSettings);
     res.json(result);
   } catch (error: any) {
     res.status(400).json({
@@ -1995,7 +2407,7 @@ app.post('/api/calculos/:tipo', async (req: Request, res: Response) => {
 });
 
 // POST /api/calculos
-app.post('/api/calculos', async (req: Request, res: Response) => {
+app.post('/api/calculos', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { tipoObra, ...params } = req.body;
     if (!tipoObra) {
@@ -2007,10 +2419,12 @@ app.post('/api/calculos', async (req: Request, res: Response) => {
       location = REGIONAL_LOCATIONS[0];
     }
 
-    const result = CalculationService.calculate(tipoObra as WorkTypeKey, {
+    const workType = tipoObra as WorkTypeKey;
+    const result = CalculationService.calculate(workType, {
       ...params,
+      wastePercentage: params.wastePercentage ?? getEffectiveCalculationSettings().defaultWasteByWorkType[workType],
       location
-    });
+    }, getEffectiveCalculationSettings());
 
     res.json(result);
   } catch (error: any) {
@@ -2022,11 +2436,11 @@ app.post('/api/calculos', async (req: Request, res: Response) => {
 });
 
 // GET /api/orcamentos
-app.get('/api/orcamentos', async (req: Request, res: Response) => {
+app.get('/api/orcamentos', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   if (isDbConnected && dbPool) {
     try {
-      const [rows]: any = await dbPool.query('SELECT * FROM orcamentos ORDER BY id DESC LIMIT 50');
-      if (Array.isArray(rows) && rows.length > 0) {
+      const [rows]: any = await dbPool.execute('SELECT * FROM orcamentos WHERE owner_user_id = ? ORDER BY id DESC LIMIT 50', [req.user!.id]);
+      if (Array.isArray(rows)) {
         const parsed = rows.map((r: any) => ({
           id: String(r.id),
           title: r.titulo || r.title,
@@ -2041,19 +2455,29 @@ app.get('/api/orcamentos', async (req: Request, res: Response) => {
         }));
         return res.json(parsed);
       }
-    } catch (e) {}
+    } catch (error) {
+      console.error('[MySQL] Erro ao consultar orçamentos do usuário:', error);
+      return res.status(500).json({ error: 'Não foi possível carregar seus orçamentos.' });
+    }
   }
-  res.json(budgetsStore);
+  res.json(budgetsStore.filter(budget => (budget as SavedBudget & { userId?: string }).userId === req.user!.id));
 });
 
 // POST /api/orcamentos
-app.post('/api/orcamentos', async (req: Request, res: Response) => {
+app.post('/api/orcamentos', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const budgetData = req.body;
+    if (!budgetData || typeof budgetData !== 'object' || Array.isArray(budgetData) ||
+        typeof budgetData.title !== 'string' || typeof budgetData.workType !== 'string' ||
+        !budgetData.calculationResult || typeof budgetData.calculationResult !== 'object') {
+      return res.status(400).json({ error: 'Dados inválidos para salvar o orçamento.' });
+    }
     const newBudget: SavedBudget = {
       ...budgetData,
-      id: budgetData.id || `orc_${Date.now()}`,
-      createdAt: budgetData.createdAt || new Date().toISOString(),
+      id: `orc_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      userId: req.user!.id,
+      clientName: req.user!.name,
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     
@@ -2062,9 +2486,9 @@ app.post('/api/orcamentos', async (req: Request, res: Response) => {
     // Adiciona na lista de obras do usuário para visualização do ADM
     const userWorkEntry: AdminUserWork = {
       id: newBudget.id,
-      userId: budgetData.userId || 'usr_convidado',
-      userName: newBudget.clientName || 'Usuário ConstruTec',
-      userEmail: budgetData.userEmail || 'usuario@construtec.com.br',
+      userId: req.user!.id,
+      userName: req.user!.name,
+      userEmail: req.user!.email,
       title: newBudget.title,
       workType: newBudget.workType,
       workTypeName: newBudget.workTypeName,
@@ -2081,17 +2505,18 @@ app.post('/api/orcamentos', async (req: Request, res: Response) => {
     await recordAuditLog(
       'CRIAR_CALCULO',
       `Orçamento criado e salvo: "${newBudget.title}" (${newBudget.workTypeName}) com custo total de R$ ${(newBudget.calculationResult?.totalEstimatedCost || 0).toFixed(2)}.`,
-      { name: newBudget.clientName || 'Usuário', email: budgetData.userEmail },
+      req.user,
       req
     );
 
     // Se MySQL estiver conectado, grava também na tabela relacional
     if (isDbConnected && dbPool) {
       try {
-        await dbPool.query(
-          `INSERT INTO orcamentos (titulo, cliente_nome, tipo_obra, custo_total_estimado, status, dados_localizacao, resultado_calculo)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        const [insertResult] = await dbPool.query<ResultSetHeader>(
+          `INSERT INTO orcamentos (owner_user_id, titulo, cliente_nome, tipo_obra, custo_total_estimado, status, dados_localizacao, resultado_calculo)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
+            req.user!.id,
             newBudget.title,
             newBudget.clientName || null,
             newBudget.workType,
@@ -2101,8 +2526,16 @@ app.post('/api/orcamentos', async (req: Request, res: Response) => {
             JSON.stringify(newBudget.calculationResult || {})
           ]
         );
+        newBudget.id = String(insertResult.insertId);
+        const budgetIndex = budgetsStore.findIndex(budget => budget.userId === req.user!.id && budget.createdAt === newBudget.createdAt);
+        if (budgetIndex !== -1) budgetsStore[budgetIndex].id = newBudget.id;
+        const workIndex = userWorksStore.findIndex(work => work.userId === req.user!.id && work.createdAt === newBudget.createdAt);
+        if (workIndex !== -1) userWorksStore[workIndex].id = newBudget.id;
       } catch (err: any) {
-        console.warn('[MySQL] Erro ao gravar orçamento no banco relacional:', err.message);
+        console.error('[MySQL] Erro ao gravar orçamento no banco relacional:', err);
+        budgetsStore = budgetsStore.filter(budget => budget.id !== newBudget.id);
+        userWorksStore = userWorksStore.filter(work => work.id !== newBudget.id);
+        return res.status(500).json({ error: 'Não foi possível persistir o orçamento no banco.' });
       }
     }
 
@@ -2113,22 +2546,35 @@ app.post('/api/orcamentos', async (req: Request, res: Response) => {
 });
 
 // PUT /api/orcamentos/:id
-app.put('/api/orcamentos/:id', async (req: Request, res: Response) => {
-  const index = budgetsStore.findIndex(b => b.id === req.params.id);
+app.put('/api/orcamentos/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const index = budgetsStore.findIndex(b => b.id === req.params.id && (b as SavedBudget & { userId?: string }).userId === req.user!.id);
   if (index === -1) {
     return res.status(404).json({ error: 'Orçamento não encontrado' });
   }
   budgetsStore[index] = {
     ...budgetsStore[index],
-    ...req.body,
+    ...(typeof req.body.title === 'string' ? { title: req.body.title } : {}),
+    ...(typeof req.body.status === 'string' ? { status: req.body.status } : {}),
+    ...(typeof req.body.notes === 'string' ? { notes: req.body.notes } : {}),
     id: req.params.id,
     updatedAt: new Date().toISOString()
   };
+  if (isDbConnected && dbPool) {
+    try {
+      await dbPool.execute(
+        'UPDATE orcamentos SET titulo = ?, status = ? WHERE id = ? AND owner_user_id = ?',
+        [budgetsStore[index].title, budgetsStore[index].status, req.params.id, req.user!.id]
+      );
+    } catch (error) {
+      console.error('[MySQL] Erro ao atualizar orçamento do usuário:', error);
+      return res.status(500).json({ error: 'Não foi possível atualizar o orçamento.' });
+    }
+  }
 
   await recordAuditLog(
     'EDITAR_OBRA',
     `Orçamento "${budgetsStore[index].title}" foi atualizado.`,
-    { name: budgetsStore[index].clientName },
+    req.user,
     req
   );
 
@@ -2136,60 +2582,40 @@ app.put('/api/orcamentos/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/orcamentos/:id
-app.delete('/api/orcamentos/:id', async (req: Request, res: Response) => {
-  const index = budgetsStore.findIndex(b => b.id === req.params.id);
-  let removedTitle = 'Orçamento';
-  if (index !== -1) {
-    removedTitle = budgetsStore[index].title;
-    budgetsStore.splice(index, 1);
+app.delete('/api/orcamentos/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const index = budgetsStore.findIndex(b => b.id === req.params.id && (b as SavedBudget & { userId?: string }).userId === req.user!.id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Orçamento não encontrado.' });
   }
-
-  // Remove também de userWorksStore se existir
-  const workIndex = userWorksStore.findIndex(w => w.id === req.params.id);
-  if (workIndex !== -1) {
-    userWorksStore.splice(workIndex, 1);
-  }
-
-  await recordAuditLog(
-    'EXCLUIR_OBRA',
-    `Orçamento/Obra "${removedTitle}" (ID: ${req.params.id}) foi excluído.`,
-    undefined,
-    req
-  );
+  const removedTitle = budgetsStore[index].title;
 
   if (isDbConnected && dbPool) {
     try {
-      await dbPool.query('DELETE FROM orcamentos WHERE id = ?', [req.params.id]);
-    } catch (e) {}
+      await dbPool.execute('DELETE FROM orcamentos WHERE id = ? AND owner_user_id = ?', [req.params.id, req.user!.id]);
+    } catch (error) {
+      console.error('[MySQL] Erro ao excluir orçamento do usuário:', error);
+      return res.status(500).json({ error: 'Não foi possível excluir o orçamento.' });
+    }
   }
 
+  budgetsStore.splice(index, 1);
+  userWorksStore = userWorksStore.filter(work => work.id !== req.params.id);
+  await recordAuditLog('EXCLUIR_OBRA', `Orçamento "${removedTitle}" foi excluído pelo proprietário.`, req.user, req);
   res.status(204).send();
 });
 
 // -------------------------------------------------------------
-// ENDPOINTS DE DOWNLOAD DA DOCUMENTAÇÃO WORD (.DOCX) E TEXTO (.TXT)
+// ENDPOINTS DO GUIA ÚNICO DO SISTEMA
 // -------------------------------------------------------------
 app.use('/documentacao', express.static(path.join(process.cwd(), 'documentacao')));
 
-app.get('/api/docs/download-word', (req: Request, res: Response) => {
-  const filePath = path.join(process.cwd(), 'documentacao', 'ESPECIFICACAO_COMPLETA_SISTEMA_CONSTRUTEC.docx');
-  res.download(filePath, 'ESPECIFICACAO_COMPLETA_SISTEMA_CONSTRUTEC.docx', (err) => {
+app.get('/api/docs/download', (req: Request, res: Response) => {
+  const filePath = path.join(process.cwd(), 'documentacao', 'GUIA_COMPLETO_CONSTRUTEC.md');
+  res.download(filePath, 'GUIA_COMPLETO_CONSTRUTEC.md', (err) => {
     if (err) {
-      console.error('Erro ao baixar documento Word:', err);
+      console.error('Erro ao baixar o guia do sistema:', err);
       if (!res.headersSent) {
-        res.status(404).json({ error: 'Arquivo Word de documentação não encontrado.' });
-      }
-    }
-  });
-});
-
-app.get('/api/docs/download-txt', (req: Request, res: Response) => {
-  const filePath = path.join(process.cwd(), 'documentacao', 'ESPECIFICACAO_COMPLETA_SISTEMA_CONSTRUTEC.txt');
-  res.download(filePath, 'ESPECIFICACAO_COMPLETA_SISTEMA_CONSTRUTEC.txt', (err) => {
-    if (err) {
-      console.error('Erro ao baixar documento TXT:', err);
-      if (!res.headersSent) {
-        res.status(404).json({ error: 'Arquivo de texto não encontrado.' });
+        res.status(404).json({ error: 'Guia completo do sistema não encontrado.' });
       }
     }
   });
@@ -2197,7 +2623,7 @@ app.get('/api/docs/download-txt', (req: Request, res: Response) => {
 
 app.get('/api/docs/content', (req: Request, res: Response) => {
   try {
-    const filePath = path.join(process.cwd(), 'documentacao', 'ESPECIFICACAO_COMPLETA_SISTEMA_CONSTRUTEC.txt');
+    const filePath = path.join(process.cwd(), 'documentacao', 'GUIA_COMPLETO_CONSTRUTEC.md');
     const content = fs.readFileSync(filePath, 'utf-8');
     res.json({ content });
   } catch (err: any) {

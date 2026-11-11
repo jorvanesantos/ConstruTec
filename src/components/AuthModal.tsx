@@ -12,8 +12,7 @@ import {
   ArrowRight, 
   CheckCircle2, 
   KeyRound, 
-  ArrowLeft,
-  Sparkles
+  ArrowLeft
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -42,7 +41,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Campos de Recuperação de Senha
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
-  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const [recoveryNewPassword, setRecoveryNewPassword] = useState('');
   const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState('');
 
@@ -168,10 +166,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         throw new Error(data.message || data.error || 'E-mail não localizado no sistema.');
       }
 
-      setGeneratedCode(data.codigo || null);
-      setRecoveryCode(data.codigo || '');
+      setRecoveryCode('');
       setRecoveryStep(2);
-      setSuccessMessage('E-mail verificado! Código de segurança gerado com sucesso.');
+      setSuccessMessage(data.message || 'Código de recuperação solicitado.');
     } catch (err: any) {
       setErrorMessage(err.message || 'Erro ao verificar e-mail para recuperação.');
     } finally {
@@ -354,21 +351,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* PASSO 2: DIGITAR CÓDIGO E DEFINIR NOVA SENHA */}
               {recoveryStep === 2 && (
                 <form onSubmit={handleResetPassword} className="space-y-4">
-                  {/* Banner do Código de Verificação */}
-                  {generatedCode && (
-                    <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950">
-                      <div className="flex items-center gap-2 text-xs font-bold mb-1 text-amber-800">
-                        <Sparkles className="w-4 h-4 text-amber-600" />
-                        <span>Código de Segurança Gerado</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-600 font-mono">Para: {recoveryEmail}</span>
-                        <span className="font-mono text-base font-black text-amber-600 tracking-widest bg-white px-2 py-0.5 rounded-md border border-amber-300">
-                          {generatedCode}
-                        </span>
-                      </div>
-                    </div>
-                  )}
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">

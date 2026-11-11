@@ -5,7 +5,7 @@
 --           Tipos de Obra dinâmicos, Materiais cadastrados e Histórico do Sistema.
 -- ==========================================================
 
-USE construtec_ia;
+USE construtec;
 
 -- 1. Atualizar Tabela de Usuários com tipo_usuario (PROPRIETARIO, ADM, USUARIO)
 -- Nota: se as colunas já existirem no MySQL, ignore erros de duplicação.

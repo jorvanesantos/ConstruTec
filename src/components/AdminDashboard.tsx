@@ -5,11 +5,16 @@ import {
   AdminMaterial, 
   AdminWorkType, 
   AdminUserWork, 
+  AdminCalculation,
   SystemAuditLog, 
   AdminDashboardStats,
-  UserType
+  UserType,
+  SupportTicket,
+  SupportTicketStatus
 } from '../types';
 import { ConstruTecLogo } from './ConstruTecLogo';
+import { DEFAULT_CALCULATION_SETTINGS, type CalculationSettings } from '../services/calculationSettings';
+import { DEFAULT_SYSTEM_SETTINGS, type SystemSettings } from '../services/systemSettings';
 import { 
   ShieldCheck, 
   Users, 
@@ -40,14 +45,16 @@ import {
   Sliders,
   Eye,
   Lock,
+  KeyRound,
   ArrowLeft,
   Database,
   FlaskConical,
   Download,
-  Bot
+  Bot,
+  LifeBuoy
 } from 'lucide-react';
 
-export type AdminTabKey = 'overview' | 'users' | 'workTypes' | 'materials' | 'works' | 'history';
+export type AdminTabKey = 'overview' | 'users' | 'workTypes' | 'materials' | 'works' | 'support' | 'history';
 
 interface AdminDashboardProps {
   user: UserProfile;
@@ -90,6 +97,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [materialsList, setMaterialsList] = useState<AdminMaterial[]>([]);
   const [workTypesList, setWorkTypesList] = useState<AdminWorkType[]>([]);
   const [userWorksList, setUserWorksList] = useState<AdminUserWork[]>([]);
+  const [calculationsList, setCalculationsList] = useState<AdminCalculation[]>([]);
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [ticketResponses, setTicketResponses] = useState<Record<string, string>>({});
+  const [ticketStatuses, setTicketStatuses] = useState<Record<string, SupportTicketStatus>>({});
   const [auditLogsList, setAuditLogsList] = useState<SystemAuditLog[]>([]);
 
   // Search & Filter States
@@ -102,7 +113,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Modals State
   const [userModalOpen, setUserModalOpen] = useState(false);
-  const [selectedUserTypeToCreate, setSelectedUserTypeToCreate] = useState<'ADM' | 'ADM_MASTER' | 'PROPRIETARIO'>('ADM');
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [selectedUserTypeToCreate, setSelectedUserTypeToCreate] = useState<'ADM' | 'ADM_MASTER' | 'PROPRIETARIO' | 'USUARIO'>(
+    user.userType === 'ADM' ? 'USUARIO' : 'ADM'
+  );
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
@@ -140,21 +154,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     modo_armazenamento: string;
   } | null>(null);
   const [testingDb, setTestingDb] = useState(false);
+  const [calculationSettings, setCalculationSettings] = useState<CalculationSettings>(DEFAULT_CALCULATION_SETTINGS);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>(DEFAULT_SYSTEM_SETTINGS);
 
   const checkDbStatus = async () => {
     try {
-      const res = await fetch('/api/status-banco');
+      const res = await fetch('/api/status-banco', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setDbStatus(data);
       }
-    } catch (e) {}
+    } catch (error) {
+      console.error('Não foi possível consultar o estado do banco:', error);
+    }
   };
 
   const handleTestDbConnection = async () => {
     setTestingDb(true);
     try {
-      const res = await fetch('/api/conectar-banco', { method: 'POST' });
+      const res = await fetch('/api/conectar-banco', { method: 'POST', headers: getAuthHeaders() });
       const data = await res.json();
       if (data.sucesso) {
         showNotification(data.mensagem);
@@ -222,12 +240,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setUserWorksList(data.obras || []);
       }
 
+      const ticketsRes = await fetch('/api/admin/chamados', { headers });
+      if (!ticketsRes.ok) {
+        const data = await ticketsRes.json();
+        setErrorMessage(data.message || data.error || 'Não foi possível carregar os chamados de suporte.');
+      } else {
+        setSupportTickets(await ticketsRes.json());
+      }
+
+      const calculationsRes = await fetch('/api/admin/calculos', { headers });
+      if (!calculationsRes.ok) {
+        const data = await calculationsRes.json();
+        setErrorMessage(data.message || data.error || 'Não foi possível carregar o histórico de cálculos.');
+      } else {
+        setCalculationsList(await calculationsRes.json());
+      }
+
       // 6. History
       const histRes = await fetch('/api/admin/historico', { headers });
       if (histRes.ok) {
         const data = await histRes.json();
         setAuditLogsList(data);
       }
+
+      const settingsRes = await fetch('/api/calculation-settings');
+      if (settingsRes.ok) setCalculationSettings(await settingsRes.json());
+      const systemSettingsRes = await fetch('/api/system-settings');
+      if (systemSettingsRes.ok) setSystemSettings(await systemSettingsRes.json());
 
       await checkDbStatus();
     } catch (err: any) {
@@ -241,6 +280,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     loadAdminData();
     checkDbStatus();
   }, []);
+
+  const handleSaveCalculationSettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      const response = await fetch('/api/admin/calculation-settings', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(calculationSettings)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Não foi possível salvar as fórmulas.');
+      setCalculationSettings(data.settings);
+      showNotification('Parâmetros do motor de cálculo atualizados.');
+    } catch (error) {
+      showNotification(error instanceof Error ? error.message : 'Erro ao salvar fórmulas.', true);
+    }
+  };
+
+  const handleSaveSystemSettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      const response = await fetch('/api/admin/system-settings', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(systemSettings)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Não foi possível salvar as configurações.');
+      setSystemSettings(data.settings);
+      showNotification('Configurações gerais atualizadas.');
+    } catch (error) {
+      showNotification(error instanceof Error ? error.message : 'Erro ao salvar configurações.', true);
+    }
+  };
 
   const showNotification = (msg: string, isError = false) => {
     if (isError) {
@@ -290,18 +363,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleResetUserPassword = async (targetUser: AdminUser) => {
+    if (!window.confirm(`Gerar uma senha temporária para ${targetUser.name}?`)) return;
+    try {
+      const response = await fetch(`/api/admin/usuarios/${targetUser.id}/reset-password`, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Não foi possível redefinir a senha.');
+      showNotification(`Senha temporária de ${targetUser.name}: ${data.temporaryPassword}`);
+    } catch (error) {
+      showNotification(error instanceof Error ? error.message : 'Erro ao redefinir senha.', true);
+    }
+  };
+
+  const handleEditUser = (targetUser: AdminUser) => {
+    setEditingUser(targetUser);
+    setSelectedUserTypeToCreate(targetUser.userType);
+    setNewUserName(targetUser.name);
+    setNewUserEmail(targetUser.email);
+    setNewUserPassword('');
+    setNewUserRole(targetUser.role);
+    setNewUserPhone(targetUser.phone || '');
+    setUserModalOpen(true);
+  };
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/admin/usuarios', {
-        method: 'POST',
+      const res = await fetch(editingUser ? `/api/admin/usuarios/${editingUser.id}` : '/api/admin/usuarios', {
+        method: editingUser ? 'PUT' : 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
           name: newUserName,
           email: newUserEmail,
-          password: newUserPassword,
+          ...(editingUser ? {} : { password: newUserPassword }),
           phone: newUserPhone,
-          userType: selectedUserTypeToCreate,
+          userType: isMaster ? selectedUserTypeToCreate : undefined,
           role: newUserRole
         })
       });
@@ -309,8 +408,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (!res.ok) {
         throw new Error(data.message || data.error || 'Erro ao cadastrar usuário');
       }
-      showNotification(`${selectedUserTypeToCreate === 'ADM_MASTER' ? 'ADM Master' : selectedUserTypeToCreate} cadastrado com sucesso!`);
+      showNotification(editingUser ? 'Conta atualizada com sucesso!' : `${selectedUserTypeToCreate === 'ADM_MASTER' ? 'ADM Master' : selectedUserTypeToCreate} cadastrado com sucesso!`);
       setUserModalOpen(false);
+      setEditingUser(null);
       setNewUserName('');
       setNewUserEmail('');
       setNewUserPassword('');
@@ -338,7 +438,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (!res.ok) {
         throw new Error(data.message || data.error || 'Erro ao salvar material');
       }
-      showNotification(`Material ${materialForm.name} salvo com sucesso!`);
+      showNotification(
+        data.persisted === false
+          ? `Material ${materialForm.name} atualizado somente nesta execução. Conecte o MySQL para manter a alteração.`
+          : `Material ${materialForm.name} salvo com sucesso!`
+      );
       setMaterialModalOpen(false);
       setEditingMaterial(null);
       loadAdminData();
@@ -391,6 +495,73 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     } catch (err: any) {
       showNotification(err.message, true);
+    }
+  };
+
+  const handleModerateWork = async (work: AdminUserWork) => {
+    const reason = isMaster ? '' : window.prompt('Informe o motivo da moderação:')?.trim() || '';
+    if (!isMaster && !reason) return;
+    if (!window.confirm(`Remover o relatório "${work.title}"? Esta ação não pode ser desfeita.`)) return;
+
+    try {
+      const response = await fetch(`/api/admin/obras/${work.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ reason })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Não foi possível remover o relatório.');
+      showNotification(`Relatório "${work.title}" removido.`);
+      await loadAdminData();
+    } catch (error) {
+      showNotification(error instanceof Error ? error.message : 'Erro ao moderar relatório.', true);
+    }
+  };
+
+  const handleModerateCalculation = async (calculation: AdminCalculation) => {
+    const reason = isMaster ? '' : window.prompt('Informe o motivo da moderação:')?.trim() || '';
+    if (!isMaster && !reason) return;
+    if (!window.confirm(`Remover o cálculo #${calculation.id}? Esta ação não pode ser desfeita.`)) return;
+
+    try {
+      const response = await fetch(`/api/admin/calculos/${calculation.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ reason })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Não foi possível remover o cálculo.');
+      setCalculationsList((current) => current.filter((item) => item.id !== calculation.id));
+      showNotification(`Cálculo #${calculation.id} removido.`);
+    } catch (error) {
+      showNotification(error instanceof Error ? error.message : 'Erro ao moderar cálculo.', true);
+    }
+  };
+
+  const handleUpdateSupportTicket = async (ticket: SupportTicket) => {
+    const status = ticketStatuses[ticket.id] || ticket.status;
+    const responseDraft = ticketResponses[ticket.id];
+    const responseText = responseDraft ?? ticket.response ?? '';
+    const responseChanged = responseDraft !== undefined && responseDraft.trim() !== (ticket.response || '');
+    try {
+      const response = await fetch(`/api/admin/chamados/${ticket.id}`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          status,
+          ...(responseChanged ? { response: responseText.trim() } : {})
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || data.error || 'Não foi possível atualizar o chamado.');
+      setTicketResponses((current) => ({ ...current, [ticket.id]: data.response || '' }));
+      setTicketStatuses((current) => ({ ...current, [ticket.id]: data.status }));
+      showNotification(data.persisted === false
+        ? 'Chamado atualizado apenas nesta execução. Conecte o MySQL para manter a resposta.'
+        : 'Chamado atualizado com sucesso.');
+      await loadAdminData();
+    } catch (error) {
+      showNotification(error instanceof Error ? error.message : 'Erro ao atualizar chamado.', true);
     }
   };
 
@@ -625,7 +796,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
 
-            {/* CARD DE ESPECIFICAÇÃO COMPLETA WORD (.DOCX) PARA IA */}
+            <section className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+              <h3 className="font-bold text-slate-900 dark:text-white">Configurações gerais</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Nome e termos de uso podem ser alterados pelo ADM Master. Integrações e faturamento não estão habilitados nesta instalação.
+              </p>
+              <form onSubmit={handleSaveSystemSettings} className="space-y-3">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  Nome do sistema
+                  <input value={systemSettings.systemName} maxLength={80} minLength={2} required disabled={!isMaster}
+                    onChange={(event) => setSystemSettings({ ...systemSettings, systemName: event.target.value })}
+                    className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 disabled:opacity-60" />
+                </label>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  Termos de uso
+                  <textarea value={systemSettings.termsOfUse} maxLength={10000} rows={3} required disabled={!isMaster}
+                    onChange={(event) => setSystemSettings({ ...systemSettings, termsOfUse: event.target.value })}
+                    className="mt-1 w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 disabled:opacity-60" />
+                </label>
+                {isMaster && <button type="submit" className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold">
+                  Salvar configurações
+                </button>}
+              </form>
+            </section>
+
+            {/* CARD DO GUIA ÚNICO DE APRESENTAÇÃO DO SISTEMA */}
             <div className="p-4 sm:p-5 rounded-2xl bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs">
               <div className="flex items-start gap-3.5">
                 <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold shrink-0 shadow-xs">
@@ -634,33 +829,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                      Documentação Oficial em Word (.docx) & Especificação para IA
+                      Guia Completo do Sistema
                     </h3>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950 uppercase">
                       NOVO
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                    Documento completo com todos os 9 motores de cálculo, regras da ABNT, arquitetura, modelo MySQL e prompt mestre para recriação idêntica do sistema por IA.
+                    Tecnologias, funcionamento, fluxo de dados, organização do código e roteiro de apresentação em um único documento.
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
                 <a
-                  href="/api/docs/download-word"
-                  download="ESPECIFICACAO_COMPLETA_SISTEMA_CONSTRUTEC.docx"
+                  href="/api/docs/download"
+                  download="GUIA_COMPLETO_CONSTRUTEC.md"
                   className="px-3.5 py-2 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 transition-all flex items-center justify-center gap-1.5 shadow-xs cursor-pointer whitespace-nowrap active:scale-95"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Baixar Word (.docx)</span>
+                  <span>Baixar Guia (.md)</span>
                 </a>
                 <a
-                  href="/api/docs/download-txt"
-                  download="ESPECIFICACAO_COMPLETA_SISTEMA_CONSTRUTEC.txt"
+                  href="/api/docs/download"
+                  download="GUIA_COMPLETO_CONSTRUTEC.md"
                   className="px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors whitespace-nowrap"
                 >
-                  Texto (.txt)
+                  Markdown (.md)
                 </a>
               </div>
             </div>
@@ -869,9 +1064,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {isMaster ? (
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <button
+                    type="button"
+                    onClick={() => {
+                      setEditingUser(null);
+                      setSelectedUserTypeToCreate('USUARIO');
+                      setNewUserRole('cliente');
+                      setUserModalOpen(true);
+                    }}
+                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-700 hover:bg-slate-600 text-white transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" /> Usuário
+                  </button>
+                  <button
                     id="btn-create-adm"
                     type="button"
                     onClick={() => {
+                      setEditingUser(null);
                       setSelectedUserTypeToCreate('ADM');
                       setNewUserRole('ADM Geral');
                       setUserModalOpen(true);
@@ -887,6 +1095,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     type="button"
                     disabled={activeMastersCount >= 5}
                     onClick={() => {
+                      setEditingUser(null);
                       setSelectedUserTypeToCreate('ADM_MASTER');
                       setNewUserRole('ADM Master Geral');
                       setUserModalOpen(true);
@@ -903,9 +1112,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-950/70 border border-blue-500/30 text-blue-300 text-xs">
-                  <ShieldCheck className="w-4 h-4 text-blue-400" />
-                  <span>Nível 2 (ADM): Gestão Operacional de Usuários</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-950/70 border border-blue-500/30 text-blue-300 text-xs">
+                    <ShieldCheck className="w-4 h-4 text-blue-400" />
+                    <span>Nível 2 (ADM): Suporte a usuários finais</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingUser(null);
+                      setSelectedUserTypeToCreate('USUARIO');
+                      setNewUserRole('cliente');
+                      setUserModalOpen(true);
+                    }}
+                    className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" /> Cadastrar usuário
+                  </button>
                 </div>
               )}
             </div>
@@ -1066,6 +1289,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 </button>
                               )}
 
+                              {(isMaster || (!isTargetMaster && !isTargetAdm)) && u.id !== user.id && (
+                                <button
+                                  onClick={() => handleResetUserPassword(u)}
+                                  className="p-1.5 rounded-lg text-amber-400 hover:bg-amber-500/10 cursor-pointer"
+                                  title="Gerar senha temporária"
+                                >
+                                  <KeyRound className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {(isMaster || (!isTargetMaster && !isTargetAdm)) && (
+                                <button
+                                  onClick={() => handleEditUser(u)}
+                                  className="p-1.5 rounded-lg text-sky-400 hover:bg-sky-500/10 cursor-pointer"
+                                  title="Editar conta"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                              )}
+
                               {/* Botão Excluir Usuário (exclusivo do ADM Master) */}
                               {isMaster && (
                                 <button
@@ -1111,7 +1354,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </p>
               </div>
 
-              <button
+              {isMaster && <button
                 id="btn-add-worktype"
                 type="button"
                 onClick={() => {
@@ -1123,8 +1366,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 <Plus className="w-4 h-4" />
                 <span>Adicionar Tipo de Obra</span>
-              </button>
+              </button>}
             </div>
+
+            <section className="p-5 rounded-2xl bg-slate-900 border border-amber-500/30 space-y-4">
+              <div>
+                <h4 className="font-bold text-white">Parâmetros do motor de cálculo</h4>
+                <p className="text-xs text-slate-400 mt-1">
+                  {isMaster
+                    ? 'Apenas ADM Master pode alterar esses coeficientes globais. As alterações exigem MySQL ativo para serem persistidas.'
+                    : 'Visualização: somente ADM Master pode alterar coeficientes e desperdícios padrão.'}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {(Object.keys(calculationSettings.defaultWasteByWorkType) as Array<keyof CalculationSettings['defaultWasteByWorkType']>).map((type) => (
+                  <label key={type} className="text-xs text-slate-300 space-y-1">
+                    <span>Desperdício padrão — {type}</span>
+                    <div className="flex items-center gap-2">
+                      <input type="number" min="0" max="100" step="0.5" disabled={!isMaster}
+                        value={calculationSettings.defaultWasteByWorkType[type]}
+                        onChange={(event) => setCalculationSettings({
+                          ...calculationSettings,
+                          defaultWasteByWorkType: {
+                            ...calculationSettings.defaultWasteByWorkType,
+                            [type]: Number(event.target.value)
+                          }
+                        })}
+                        className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 disabled:opacity-60" />
+                      <span>%</span>
+                    </div>
+                  </label>
+                ))}
+                <label className="text-xs text-slate-300 space-y-1">
+                  <span>Blocos de concreto por m²</span>
+                  <input type="number" min="1" max="100" step="0.1" disabled={!isMaster}
+                    value={calculationSettings.masonryUnitsPerM2.concreteBlock}
+                    onChange={(event) => setCalculationSettings({
+                      ...calculationSettings,
+                      masonryUnitsPerM2: { ...calculationSettings.masonryUnitsPerM2, concreteBlock: Number(event.target.value) }
+                    })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 disabled:opacity-60" />
+                </label>
+                <label className="text-xs text-slate-300 space-y-1">
+                  <span>Tijolos cerâmicos por m²</span>
+                  <input type="number" min="1" max="200" step="0.1" disabled={!isMaster}
+                    value={calculationSettings.masonryUnitsPerM2.ceramicBrick}
+                    onChange={(event) => setCalculationSettings({
+                      ...calculationSettings,
+                      masonryUnitsPerM2: { ...calculationSettings.masonryUnitsPerM2, ceramicBrick: Number(event.target.value) }
+                    })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 disabled:opacity-60" />
+                </label>
+              </div>
+              {isMaster && (
+                <button type="button" onClick={handleSaveCalculationSettings}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold">
+                  Salvar parâmetros globais
+                </button>
+              )}
+            </section>
 
             {/* Grid de Tipos de Construção */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1153,7 +1453,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {/* Toggle de Ativo/Inativo */}
                     <button
                       onClick={() => handleToggleWorkTypeStatus(wt)}
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors cursor-pointer ${
+                      disabled={!isMaster}
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${isMaster ? 'cursor-pointer' : 'cursor-default'} ${
                         wt.active
                           ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                           : 'bg-red-500/20 text-red-300 border-red-500/30'
@@ -1169,7 +1470,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <div className="mt-4 pt-3 border-t border-slate-700/60 flex items-center justify-between text-xs text-slate-400">
                     <span>Perda padrão: <strong className="text-amber-400">{wt.defaultWaste}%</strong></span>
-                    <button
+                    {isMaster && <button
                       onClick={() => {
                         setEditingWorkType(wt);
                         setWorkTypeForm({
@@ -1183,7 +1484,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold cursor-pointer"
                     >
                       <Edit3 className="w-3.5 h-3.5" /> Editar
-                    </button>
+                    </button>}
                   </div>
                 </div>
               ))}
@@ -1417,6 +1718,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </td>
 
                         <td className="py-3 px-4 text-right">
+                          <div className="inline-flex items-center gap-2">
                           <button
                             onClick={() => setInspectWork(w)}
                             className="px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
@@ -1424,6 +1726,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <Eye className="w-3.5 h-3.5" />
                             <span>Inspecionar</span>
                           </button>
+                          <button
+                            onClick={() => handleModerateWork(w)}
+                            className="px-2.5 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                            title="Remover relatório por moderação"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Remover</span>
+                          </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1432,6 +1743,117 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </table>
             </div>
 
+            <section className="space-y-3 rounded-2xl border border-slate-700 bg-slate-800/80 p-4">
+              <div>
+                <h3 className="font-bold text-white">Cálculos persistidos</h3>
+                <p className="mt-1 text-xs text-slate-400">
+                  Histórico da API salvo no MySQL. A moderação exige motivo para ADM Normal.
+                </p>
+              </div>
+              {calculationsList.length === 0 ? (
+                <p className="text-xs text-slate-400">Nenhum cálculo persistido disponível.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="text-[10px] uppercase tracking-wider text-slate-400">
+                      <tr>
+                        <th className="py-2 pr-4">ID</th>
+                        <th className="py-2 pr-4">Tipo de obra</th>
+                        <th className="py-2 pr-4">Proprietário</th>
+                        <th className="py-2 pr-4">Data</th>
+                        <th className="py-2 text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700">
+                      {calculationsList.map((calculation) => (
+                        <tr key={calculation.id}>
+                          <td className="py-2 pr-4 font-mono">{calculation.id}</td>
+                          <td className="py-2 pr-4">{calculation.tipo_obra}</td>
+                          <td className="py-2 pr-4">{calculation.owner_user_id || 'Não identificado'}</td>
+                          <td className="py-2 pr-4">{new Date(calculation.criado_em).toLocaleString('pt-BR')}</td>
+                          <td className="py-2 text-right">
+                            <button
+                              onClick={() => void handleModerateCalculation(calculation)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-red-500/10 px-2.5 py-1.5 font-semibold text-red-300 hover:bg-red-500/20"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Remover
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+          </div>
+        )}
+
+        {activeAdminTab === 'support' && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-700 bg-slate-800 p-4">
+              <h3 className="flex items-center gap-2 text-base font-bold text-white">
+                <LifeBuoy className="h-5 w-5 text-amber-400" />
+                Chamados de Suporte
+              </h3>
+              <p className="mt-1 text-xs text-slate-300">
+                Analise as solicitações, responda ao usuário e atualize o status do atendimento.
+              </p>
+            </div>
+            {supportTickets.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-600 p-6 text-center text-sm text-slate-400">
+                Não há chamados registrados.
+              </p>
+            ) : supportTickets.map((ticket) => (
+              <article key={ticket.id} className="space-y-3 rounded-2xl border border-slate-700 bg-slate-800/80 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-white">{ticket.subject}</h4>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {ticket.ownerName} · {ticket.ownerEmail} · {new Date(ticket.createdAt).toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-200">
+                    {ticket.status.replace('_', ' ')}
+                  </span>
+                </div>
+                <p className="whitespace-pre-wrap rounded-xl bg-slate-900/70 p-3 text-sm text-slate-200">{ticket.message}</p>
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold text-slate-300">Resposta ao usuário</span>
+                  <textarea
+                    rows={3}
+                    maxLength={5000}
+                    value={ticketResponses[ticket.id] ?? ticket.response ?? ''}
+                    onChange={(event) => setTicketResponses((current) => ({ ...current, [ticket.id]: event.target.value }))}
+                    className="w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
+                    placeholder="Escreva a orientação ou resposta..."
+                  />
+                </label>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <select
+                    value={ticketStatuses[ticket.id] || ticket.status}
+                    onChange={(event) => setTicketStatuses((current) => ({
+                      ...current,
+                      [ticket.id]: event.target.value as SupportTicketStatus
+                    }))}
+                    className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-xs text-white"
+                  >
+                    <option value="aberto">Aberto</option>
+                    <option value="em_atendimento">Em atendimento</option>
+                    <option value="respondido">Respondido</option>
+                    <option value="fechado">Fechado</option>
+                  </select>
+                  <button
+                    onClick={() => void handleUpdateSupportTicket(ticket)}
+                    className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400"
+                  >
+                    Salvar resposta e status
+                  </button>
+                </div>
+              </article>
+            ))}
           </div>
         )}
 
@@ -1540,7 +1962,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in">
           <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-slate-700 p-6 shadow-2xl text-slate-100">
             <button
-              onClick={() => setUserModalOpen(false)}
+              onClick={() => { setUserModalOpen(false); setEditingUser(null); }}
               className="absolute top-4 right-4 text-slate-400 hover:text-white"
             >
               <X className="w-5 h-5" />
@@ -1548,11 +1970,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
-                {selectedUserTypeToCreate === 'PROPRIETARIO' ? <Crown className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
+                {selectedUserTypeToCreate === 'ADM_MASTER' || selectedUserTypeToCreate === 'PROPRIETARIO'
+                  ? <Crown className="w-5 h-5" />
+                  : <ShieldCheck className="w-5 h-5" />}
               </div>
               <div>
                 <h3 className="text-base font-bold text-white">
-                  Cadastrar {selectedUserTypeToCreate === 'PROPRIETARIO' ? 'Novo Proprietário' : 'Novo Administrador (ADM)'}
+                  {editingUser ? 'Editar conta' : `Cadastrar ${selectedUserTypeToCreate === 'USUARIO' ? 'usuário final' : selectedUserTypeToCreate === 'ADM_MASTER' || selectedUserTypeToCreate === 'PROPRIETARIO' ? 'ADM Master' : 'ADM'}`}
                 </h3>
                 <p className="text-xs text-slate-400">
                   Operação administrativa restrita com registro em auditoria.
@@ -1560,56 +1984,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            {selectedUserTypeToCreate === 'ADM_MASTER' && (
+            {!editingUser && (selectedUserTypeToCreate === 'ADM_MASTER' || selectedUserTypeToCreate === 'PROPRIETARIO') && (
               <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
                 <span className="font-bold">Regra de Segurança:</span> O sistema permite no máximo <strong>5 ADM Masters</strong> simultâneos. ADM Masters ativos no momento: <strong>{activeMastersCount} / 5</strong>.
               </div>
             )}
 
             <form onSubmit={handleCreateUser} className="space-y-3.5">
+              {!editingUser && (
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Tipo de Acesso</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedUserTypeToCreate('ADM');
-                      setNewUserRole('ADM Geral');
-                    }}
-                    className={`py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
-                      selectedUserTypeToCreate === 'ADM'
-                        ? 'bg-amber-500 text-slate-950 border-amber-500'
-                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
-                    }`}
-                  >
-                    Administrador (ADM)
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <button type="button" onClick={() => { setSelectedUserTypeToCreate('USUARIO'); setNewUserRole('cliente'); }}
+                    className={`py-2 text-xs font-bold rounded-xl border ${selectedUserTypeToCreate === 'USUARIO' ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>
+                    Usuário final
                   </button>
-
-                  <button
-                    type="button"
-                    disabled={activeMastersCount >= 5}
-                    onClick={() => {
-                      setSelectedUserTypeToCreate('ADM_MASTER');
-                      setNewUserRole('ADM Master Geral');
-                    }}
-                    className={`py-2 text-xs font-bold rounded-xl border transition-all ${
-                      activeMastersCount >= 5
-                        ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed'
-                        : selectedUserTypeToCreate === 'ADM_MASTER' || selectedUserTypeToCreate === 'PROPRIETARIO'
-                          ? 'bg-amber-500 text-slate-950 border-amber-500 cursor-pointer'
-                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750 cursor-pointer'
-                    }`}
-                  >
-                    ADM Master ({activeMastersCount}/5)
-                  </button>
+                  {isMaster && (
+                    <>
+                      <button type="button" onClick={() => { setSelectedUserTypeToCreate('ADM'); setNewUserRole('ADM Geral'); }}
+                        className={`py-2 text-xs font-bold rounded-xl border ${selectedUserTypeToCreate === 'ADM' ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>
+                        Administrador (ADM)
+                      </button>
+                      <button type="button" disabled={activeMastersCount >= 5}
+                        onClick={() => { setSelectedUserTypeToCreate('ADM_MASTER'); setNewUserRole('ADM Master Geral'); }}
+                        className={`py-2 text-xs font-bold rounded-xl border ${activeMastersCount >= 5 ? 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed' : selectedUserTypeToCreate === 'ADM_MASTER' || selectedUserTypeToCreate === 'PROPRIETARIO' ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-slate-800 text-slate-300 border-slate-700'}`}>
+                        ADM Master ({activeMastersCount}/5)
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Nome completo</label>
                 <input
                   type="text"
                   required
+                  minLength={2}
                   placeholder="Ex: Carlos Albuquerque"
                   value={newUserName}
                   onChange={(e) => setNewUserName(e.target.value)}
@@ -1629,6 +2041,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 />
               </div>
 
+              {!editingUser && (
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
                   Senha Exclusiva de Acesso (Mínimo 6 caracteres)
@@ -1643,6 +2056,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   className="w-full px-3 py-2 text-sm rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-500 focus:border-amber-500 focus:outline-hidden"
                 />
               </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Telefone / WhatsApp</label>
@@ -1655,11 +2069,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 />
               </div>
 
+              {!editingUser && selectedUserTypeToCreate === 'ADM' && (
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  {selectedUserTypeToCreate === 'ADM' ? 'Selecione o Tipo de ADM' : 'Especialidade ADM Master'}
+                  Selecione o tipo de ADM
                 </label>
-                {selectedUserTypeToCreate === 'ADM' ? (
                   <select
                     value={newUserRole}
                     onChange={(e) => setNewUserRole(e.target.value)}
@@ -1671,7 +2085,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <option value="ADM Financeiro">ADM Financeiro (Orçamentos, Custos e Relatórios)</option>
                     <option value="ADM Moderador">ADM Moderador (Auditoria e Controle de Usuários)</option>
                   </select>
-                ) : (
+              </div>
+              )}
+              {!editingUser && selectedUserTypeToCreate === 'ADM_MASTER' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Especialidade do ADM Master</label>
                   <select
                     value={newUserRole}
                     onChange={(e) => setNewUserRole(e.target.value)}
@@ -1679,20 +2097,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   >
                     <option value="ADM Master Geral">ADM Master Geral (Controle Total & Gestão de Administradores)</option>
                   </select>
-                )}
-                <p className="text-[11px] text-slate-400 mt-1">
-                  {selectedUserTypeToCreate === 'ADM'
-                    ? 'O ADM Master define a alçada e a área de responsabilidade deste administrador.'
-                    : 'Acesso irrestrito a todos os recursos, parâmetros do sistema e gerenciamento de outros ADMs.'}
-                </p>
-              </div>
+                </div>
+              )}
 
               <div className="pt-2">
                 <button
                   type="submit"
                   className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-md transition-all cursor-pointer"
                 >
-                  Confirmar Cadastro de {selectedUserTypeToCreate === 'ADM_MASTER' ? 'ADM Master' : selectedUserTypeToCreate}
+                  {editingUser ? 'Salvar alterações' : `Confirmar cadastro de ${selectedUserTypeToCreate === 'USUARIO' ? 'usuário' : selectedUserTypeToCreate}`}
                 </button>
               </div>
             </form>

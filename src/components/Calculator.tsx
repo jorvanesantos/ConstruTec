@@ -7,6 +7,7 @@ import {
   SavedBudget 
 } from '../types';
 import { CalculationService } from '../services/calculationEngine';
+import { DEFAULT_CALCULATION_SETTINGS, type CalculationSettings } from '../services/calculationSettings';
 import { WORK_TYPES } from '../data/catalog';
 import { 
   Calculator as CalcIcon, 
@@ -53,6 +54,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [depth, setDepth] = useState<number>(0.12);
   const [thicknessCm, setThicknessCm] = useState<number>(10);
   const [wastePercentage, setWastePercentage] = useState<number>(10);
+  const [calculationSettings, setCalculationSettings] = useState<CalculationSettings>(DEFAULT_CALCULATION_SETTINGS);
 
   // Vãos (Openings)
   const [doorsCount, setDoorsCount] = useState<number>(0);
@@ -88,13 +90,23 @@ export const Calculator: React.FC<CalculatorProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [copiedNotification, setCopiedNotification] = useState(false);
 
+  useEffect(() => {
+    fetch('/api/calculation-settings')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Não foi possível carregar as configurações de cálculo.');
+        return response.json();
+      })
+      .then((settings: CalculationSettings) => setCalculationSettings(settings))
+      .catch((error) => console.error('[Cálculo] Usando parâmetros locais padrão:', error));
+  }, []);
+
   // Synchronize waste percentage when selected work type changes
   useEffect(() => {
     const wt = WORK_TYPES.find(w => w.id === selectedType);
     if (wt) {
-      setWastePercentage(wt.defaultWaste);
+      setWastePercentage(calculationSettings.defaultWasteByWorkType[selectedType] ?? wt.defaultWaste);
     }
-  }, [selectedType]);
+  }, [selectedType, calculationSettings]);
 
   const handleCalculate = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -130,7 +142,7 @@ export const Calculator: React.FC<CalculatorProps> = ({
         location
       };
 
-      const calcResult = CalculationService.calculate(selectedType, calculationParams);
+      const calcResult = CalculationService.calculate(selectedType, calculationParams, calculationSettings);
       setResult(calcResult);
       setBudgetTitle(`Orçamento de ${calcResult.workTypeName} - ${calcResult.area ? calcResult.area.toFixed(1) + ' m²' : calcResult.volume?.toFixed(2) + ' m³'}`);
       setStep('result');
@@ -165,20 +177,29 @@ export const Calculator: React.FC<CalculatorProps> = ({
 
       // Call API or local state
       try {
-        await fetch('/api/orcamentos', {
+        const response = await fetch('/api/orcamentos', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${user.token || localStorage.getItem('construtec_jwt_token') || ''}`
+          },
           body: JSON.stringify(newBudget)
         });
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || error.error || 'Não foi possível salvar o orçamento.');
+        }
+        const savedBudget = await response.json() as SavedBudget;
+        onSaveBudgetSuccess(savedBudget);
+        setSaveSuccessMessage('Orçamento salvo com sucesso na sua conta!');
+        setTimeout(() => setSaveSuccessMessage(null), 4000);
+        return;
       } catch (e) {
-        console.warn('Salvando localmente via fallback');
+        console.error('Falha ao salvar orçamento:', e);
+        throw e;
       }
-
-      onSaveBudgetSuccess(newBudget);
-      setSaveSuccessMessage('Orçamento salvo com sucesso no seu painel!');
-      setTimeout(() => setSaveSuccessMessage(null), 4000);
     } catch (err) {
-      alert('Erro ao salvar orçamento.');
+      alert(err instanceof Error ? err.message : 'Erro ao salvar orçamento.');
     } finally {
       setIsSaving(false);
     }

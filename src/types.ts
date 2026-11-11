@@ -68,6 +68,7 @@ export interface RegionalLocation {
 
 export interface SavedBudget {
   id: string;
+  userId?: string;
   title: string;
   clientName?: string;
   location: RegionalLocation;
@@ -152,6 +153,29 @@ export interface AdminUserWork {
   calculationResult?: CalculationResult;
 }
 
+export interface AdminCalculation {
+  id: string;
+  owner_user_id?: string;
+  tipo_obra: string;
+  criado_em: string;
+}
+
+export type SupportTicketStatus = 'aberto' | 'em_atendimento' | 'respondido' | 'fechado';
+
+export interface SupportTicket {
+  id: string;
+  ownerUserId: string;
+  ownerName: string;
+  ownerEmail: string;
+  subject: string;
+  message: string;
+  status: SupportTicketStatus;
+  response?: string;
+  responseBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SystemAuditLog {
   id: string;
   action: 
@@ -174,7 +198,11 @@ export interface SystemAuditLog {
     | 'STATUS_MATERIAL'
     | 'CRIAR_TIPO_OBRA'
     | 'EDITAR_TIPO_OBRA'
-    | 'STATUS_TIPO_OBRA';
+    | 'STATUS_TIPO_OBRA'
+    | 'EDITAR_FORMULAS'
+    | 'EDITAR_CONFIGURACAO'
+    | 'ABRIR_CHAMADO'
+    | 'RESPONDER_CHAMADO'
   description: string;
   userId?: string;
   userName: string;
@@ -207,4 +235,3 @@ export interface PriceCatalogItem {
 }
 
 export type ThemeMode = 'light' | 'dark';
-

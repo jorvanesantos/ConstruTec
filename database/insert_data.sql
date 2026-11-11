@@ -4,7 +4,7 @@
 -- Objetivo: Carga inicial de dados técnicos e tabela regional de preços
 -- ==========================================================
 
-USE construtec_ia;
+USE construtec;
 
 -- 1. Inserir Usuários Iniciais (Proprietário, Administrador e Usuários)
 INSERT INTO usuarios (id, nome, email, perfil, tipo_usuario, ativo, uf_padrao, cidade_padrao) VALUES

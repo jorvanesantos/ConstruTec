@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { UserProfile, RegionalLocation, ThemeMode } from '../types';
 import { ConstruTecLogo } from './ConstruTecLogo';
 import { 
-  Calculator, 
   MapPin, 
   User, 
   LogOut, 
@@ -20,9 +19,9 @@ import {
 } from 'lucide-react';
 
 interface HeaderProps {
-  activeTab: 'home' | 'calculator' | 'budgets' | 'materials' | 'about' | 'dashboard' | 'admin';
-  setActiveTab: (tab: 'home' | 'calculator' | 'budgets' | 'materials' | 'about' | 'dashboard' | 'admin') => void;
+  setActiveTab: (tab: 'home' | 'calculator' | 'budgets' | 'materials' | 'support' | 'about' | 'dashboard' | 'admin') => void;
   user: UserProfile | null;
+  systemName?: string;
   onOpenAuth: () => void;
   onLogout: () => void;
   currentLocation: RegionalLocation;
@@ -30,6 +29,7 @@ interface HeaderProps {
   savedBudgetsCount: number;
   onToggleMobileSidebar: () => void;
   onOpenChangePassword?: () => void;
+  onOpenProfile?: () => void;
   isUserTestMode?: boolean;
   onEnterUserTestMode?: () => void;
   onExitUserTestMode?: () => void;
@@ -38,15 +38,16 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  activeTab,
   setActiveTab,
   user,
+  systemName = 'ConstruTec',
   onOpenAuth,
   onLogout,
   currentLocation,
   onOpenLocationModal,
   onToggleMobileSidebar,
   onOpenChangePassword,
+  onOpenProfile,
   isUserTestMode = false,
   onEnterUserTestMode,
   onExitUserTestMode,
@@ -100,7 +101,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex flex-col">
               <div className="flex items-center">
                 <span className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white font-sans">
-                  Constru<span className="text-amber-500">Tec</span>
+                  {systemName}
                 </span>
               </div>
               <span className="text-[10px] font-medium text-slate-400 dark:text-slate-400 tracking-tight -mt-0.5 hidden sm:block">
@@ -207,6 +208,20 @@ export const Header: React.FC<HeaderProps> = ({
                       </button>
                     )}
 
+                    {onOpenProfile && (
+                      <button
+                        id="btn-edit-profile"
+                        onClick={() => {
+                          onOpenProfile();
+                          setUserDropdownOpen(false);
+                        }}
+                        className="w-full text-left mt-1 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl flex items-center gap-2 cursor-pointer"
+                      >
+                        <User className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                        <span>Editar meu perfil</span>
+                      </button>
+                    )}
+
                     {onOpenChangePassword && (
                       <button
                         id="btn-change-password"
@@ -248,22 +263,6 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* CTA Começar Cálculo - Apenas para usuários comuns ou em modo de teste */}
-          {(!isAdminOrMaster || isUserTestMode) && (
-            <button
-              id="btn-cta-start-calc"
-              type="button"
-              onClick={() => {
-                setActiveTab('calculator');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="px-3 sm:px-4 py-2 rounded-xl text-xs font-extrabold text-slate-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 shadow-xs hover:shadow transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
-            >
-              <Calculator className="w-4 h-4 shrink-0" />
-              <span className="hidden sm:inline">Calculadora</span>
-              <span className="sm:hidden">Calcular</span>
-            </button>
-          )}
         </div>
 
       </div>

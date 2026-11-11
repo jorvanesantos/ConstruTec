@@ -28,12 +28,13 @@ import {
   Users,
   Activity,
   History,
+  LifeBuoy,
   Sun,
   Moon
 } from 'lucide-react';
 
-export type NavTab = 'home' | 'calculator' | 'budgets' | 'materials' | 'about' | 'dashboard' | 'admin';
-export type AdminSubTabKey = 'overview' | 'users' | 'workTypes' | 'materials' | 'works' | 'history';
+export type NavTab = 'home' | 'calculator' | 'budgets' | 'materials' | 'support' | 'about' | 'dashboard' | 'admin';
+export type AdminSubTabKey = 'overview' | 'users' | 'workTypes' | 'materials' | 'works' | 'support' | 'history';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -134,6 +135,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       description: 'Obras e cálculos dos usuários'
     },
     {
+      id: 'support',
+      label: 'Chamados de Suporte',
+      icon: LifeBuoy,
+      description: 'Responder dúvidas e bugs'
+    },
+    {
       id: 'history',
       label: 'Histórico do Sistema',
       icon: History,
@@ -181,6 +188,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         label: 'Meu Painel', 
         icon: LayoutDashboard, 
         description: 'Métricas & comparativos' 
+      },
+      {
+        id: 'support' as NavTab,
+        label: 'Suporte',
+        icon: LifeBuoy,
+        description: 'Dúvidas e chamados'
       },
       { 
         id: 'about' as NavTab, 

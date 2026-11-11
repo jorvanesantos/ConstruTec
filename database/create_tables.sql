@@ -4,7 +4,7 @@
 -- Objetivo: Criação das tabelas relacionais com chaves e constraints
 -- ==========================================================
 
-USE construtec_ia;
+USE construtec;
 
 -- 1. Tabela de Usuários (com controle de Proprietários, ADMs e Usuários comuns)
 CREATE TABLE IF NOT EXISTS usuarios (
@@ -96,16 +96,22 @@ CREATE TABLE IF NOT EXISTS obras (
 -- 7. Tabela de Orçamentos
 CREATE TABLE IF NOT EXISTS orcamentos (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    usuario_id BIGINT NOT NULL,
+    usuario_id BIGINT NULL,
+    owner_user_id VARCHAR(80) NULL,
     obra_id BIGINT NULL,
-    tipo_obra_id BIGINT NOT NULL,
+    tipo_obra_id BIGINT NULL,
     titulo VARCHAR(150) NOT NULL,
-    area_m2 DECIMAL(10,2) NOT NULL,
+    cliente_nome VARCHAR(150) NULL,
+    tipo_obra VARCHAR(50) NULL,
+    custo_total_estimado DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    dados_localizacao JSON NULL,
+    resultado_calculo JSON NULL,
+    area_m2 DECIMAL(10,2) NULL,
     volume_m3 DECIMAL(10,3) NULL,
     percentual_desperdicio DECIMAL(5,2) NOT NULL DEFAULT 10.00,
-    subtotal_materiais DECIMAL(12,2) NOT NULL,
-    custo_desperdicio DECIMAL(12,2) NOT NULL,
-    valor_total_estimado DECIMAL(12,2) NOT NULL,
+    subtotal_materiais DECIMAL(12,2) NULL,
+    custo_desperdicio DECIMAL(12,2) NULL,
+    valor_total_estimado DECIMAL(12,2) NULL,
     parametros_json JSON NULL,
     formulas_json JSON NULL,
     status ENUM('rascunho', 'aprovado', 'em_andamento', 'concluido') DEFAULT 'rascunho',
@@ -146,6 +152,22 @@ CREATE TABLE IF NOT EXISTS historico (
     CONSTRAINT fk_historico_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+-- 10. Chamados de suporte abertos por usuários e atendidos pela equipe administrativa
+CREATE TABLE IF NOT EXISTS suporte_chamados (
+    id VARCHAR(80) PRIMARY KEY,
+    owner_user_id VARCHAR(80) NOT NULL,
+    owner_name VARCHAR(150) NOT NULL,
+    owner_email VARCHAR(180) NOT NULL,
+    assunto VARCHAR(150) NOT NULL,
+    mensagem TEXT NOT NULL,
+    status ENUM('aberto', 'em_atendimento', 'respondido', 'fechado') NOT NULL DEFAULT 'aberto',
+    resposta TEXT NULL,
+    respondido_por VARCHAR(150) NULL,
+    criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_suporte_owner_status (owner_user_id, status)
+) ENGINE=InnoDB;
+
 -- Índices de Otimização
 CREATE INDEX idx_orcamentos_usuario ON orcamentos(usuario_id);
 CREATE INDEX idx_orcamento_materiais_orcamento ON orcamento_materiais(orcamento_id);
@@ -153,3 +175,14 @@ CREATE INDEX idx_precos_material_local ON precos_materiais(material_id, localiza
 CREATE INDEX idx_usuarios_tipo ON usuarios(tipo_usuario, ativo);
 CREATE INDEX idx_historico_acao ON historico(acao);
 CREATE INDEX idx_historico_data ON historico(criado_em DESC);
+
+-- 11. Cálculos de materiais salvos pela API Node/Express
+CREATE TABLE IF NOT EXISTS calculos (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    owner_user_id VARCHAR(80) NULL,
+    tipo_obra VARCHAR(50) NOT NULL,
+    parametros_json JSON NOT NULL,
+    resultado_json JSON NOT NULL,
+    criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_calculos_tipo_data (tipo_obra, criado_em)
+) ENGINE=InnoDB;
