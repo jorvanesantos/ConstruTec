@@ -2,7 +2,7 @@
 -- ConstruTec - Seed 001: Carga Inicial de Unidades, Tipos, Materiais e Contas
 -- =============================================================================
 
-USE construtec_ia;
+USE construtec_db;
 
 -- 1. Unidades de Medida
 INSERT INTO unidade_medida (id, sigla, nome, descricao) VALUES

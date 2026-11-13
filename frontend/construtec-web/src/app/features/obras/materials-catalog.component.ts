@@ -24,7 +24,7 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
           </button>
           <h1 class="font-display text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2.5">
             <lucide-icon [img]="Package" class="w-7 h-7 text-amber-500"></lucide-icon>
-            Catálogo de Materiais e Preços SINAPI
+            Catálogo de Materiais e Preços Regionais
           </h1>
         </div>
 

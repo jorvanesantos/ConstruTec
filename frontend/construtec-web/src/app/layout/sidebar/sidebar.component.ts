@@ -172,7 +172,7 @@ export class SidebarComponent {
         return count > 0 ? count : null;
       }
     },
-    { id: 'materials', label: 'Catálogo SINAPI', icon: Package },
+    { id: 'materials', label: 'Catálogo de Materiais', icon: Package },
     { id: 'dashboard', label: 'Resumo Geral', icon: LayoutDashboard },
     { id: 'admin', label: 'Painel Admin', icon: ShieldCheck, adminOnly: true }
   ];

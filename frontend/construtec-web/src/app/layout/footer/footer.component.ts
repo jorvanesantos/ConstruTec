@@ -19,7 +19,7 @@ import { UiStateService } from '../../core/services/ui-state.service';
             Calculadora
           </button>
           <button type="button" (click)="ui.navigateTo('materials')" class="hover:text-amber-500 transition-colors cursor-pointer">
-            Catálogo SINAPI
+            Catálogo de Materiais
           </button>
         </div>
       </div>

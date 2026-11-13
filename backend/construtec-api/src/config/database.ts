@@ -5,7 +5,7 @@ export const DB_CONFIG = {
   port: parseInt(process.env.DB_PORT || '3306', 10),
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'construtec_ia'
+  database: process.env.DB_NAME || 'construtec_db'
 };
 
 let dbPool: mysql.Pool | null = null;

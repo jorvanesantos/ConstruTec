@@ -73,14 +73,6 @@ interface FaqItem {
                 <lucide-icon [img]="ArrowRight" class="w-4 h-4"></lucide-icon>
               </button>
 
-              <button
-                type="button"
-                (click)="ui.navigateTo('materials')"
-                class="inline-flex items-center gap-2 px-5 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold text-sm border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-              >
-                <lucide-icon [img]="Package" class="w-4 h-4 text-amber-500"></lucide-icon>
-                <span>Ver Catálogo SINAPI ({{ ui.currentLocation().uf }})</span>
-              </button>
             </div>
 
             <div class="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 text-xs font-medium text-slate-500 dark:text-slate-400">

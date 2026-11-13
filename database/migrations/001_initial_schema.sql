@@ -3,11 +3,11 @@
 -- Conforme Plano de Desenvolvimento (Tabela modelo inicial + Auditoria + SINAPI)
 -- =============================================================================
 
-CREATE DATABASE IF NOT EXISTS construtec_ia
+CREATE DATABASE IF NOT EXISTS construtec_db
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
-USE construtec_ia;
+USE construtec_db;
 
 -- 1. Tabela usuario (dados da conta, perfil, hash bcrypt e status)
 CREATE TABLE IF NOT EXISTS usuario (

@@ -26,7 +26,7 @@ import { UiStateService } from '../../core/services/ui-state.service';
                 <lucide-icon [img]="MapPin" class="w-5 h-5"></lucide-icon>
               </div>
               <div>
-                <h3 class="text-base font-bold text-slate-900 dark:text-white">Base de Preços Regionais (SINAPI)</h3>
+                <h3 class="text-base font-bold text-slate-900 dark:text-white">Base de Preços Regionais</h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400">
                   Selecione o estado da obra para calibrar automaticamente os custos dos materiais
                 </p>

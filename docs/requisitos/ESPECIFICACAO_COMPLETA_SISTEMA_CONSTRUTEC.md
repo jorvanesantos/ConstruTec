@@ -113,7 +113,7 @@ Implementados em `src/services/calculationEngine.ts`:
 ---
 
 ## 5. ESTRUTURA DO BANCO DE DADOS MYSQL
-Banco: `construtec_ia`
+Banco: `construtec_db`
 
 ```sql
 -- 1. Tabela de Usuários
