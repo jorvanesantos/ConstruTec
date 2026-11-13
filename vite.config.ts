@@ -1,8 +1,8 @@
+import angular from '@analogjs/vite-plugin-angular';
 import tailwindcss from '@tailwindcss/vite';
-import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
-import {defineConfig, Plugin} from 'vite';
+import { defineConfig, Plugin } from 'vite';
 
 // LINT.IfChange(aistudio_media_plugin)
 function aistudioMediaPlugin(): Plugin {
@@ -66,15 +66,22 @@ function aistudioMediaPlugin(): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), aistudioMediaPlugin()],
+    plugins: [
+      angular({
+        tsconfig: path.resolve(__dirname, 'tsconfig.app.json'),
+        workspaceRoot: path.resolve(__dirname, 'frontend/construtec-web')
+      }),
+      tailwindcss(),
+      aistudioMediaPlugin()
+    ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, 'frontend/construtec-web/src'),
       },
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},

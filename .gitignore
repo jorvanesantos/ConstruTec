@@ -1,26 +1,8 @@
 node_modules/
-
-# Environment variables (never commit secrets)
-.env
-.env.*
-!.env.example
-
-# Build output
 build/
 dist/
 coverage/
-target/
-.angular/
-
-# Logs
-*.log
-npm-debug.log*
-
-# Editor / system
-.vscode/*
-!.vscode/extensions.json
 .DS_Store
-Thumbs.db
-
-# Local modernization tooling artifacts
-.github/modernize/java-upgrade/
+*.log
+.env*
+!.env.example

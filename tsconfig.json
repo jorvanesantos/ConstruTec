@@ -14,13 +14,23 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "allowJs": true,
-    "jsx": "react-jsx",
     "paths": {
       "@/*": [
-        "./*"
+        "./frontend/construtec-web/src/*"
       ]
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "server.ts",
+    "frontend/construtec-web/src/**/*.ts",
+    "backend/construtec-api/src/**/*.ts",
+    "scripts/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src"
+  ]
 }

@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "noEmit": false,
+    "paths": {
+      "@/*": [
+        "./frontend/construtec-web/src/*"
+      ]
+    }
+  },
+  "files": [
+    "frontend/construtec-web/src/main.ts"
+  ],
+  "include": [
+    "frontend/construtec-web/src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "backend",
+    "scripts"
+  ]
+}
