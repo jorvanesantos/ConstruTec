@@ -634,7 +634,7 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
                       <tr>
                         <td class="py-3.5 px-6">
                           <p class="font-bold text-slate-900 dark:text-white">{{ w.title }}</p>
-                          <p class="text-xs text-slate-500 dark:text-slate-400">{{ w.userName }} ({{ w.locationUf || 'SP' }})</p>
+                          <p class="text-xs text-slate-500 dark:text-slate-400">{{ w.userName }}</p>
                         </td>
                         <td class="py-3.5 px-4 text-xs">{{ w.workTypeName }}</td>
                         <td class="py-3.5 px-4 font-bold text-amber-600 dark:text-amber-400">{{ w.totalCost | brl }}</td>

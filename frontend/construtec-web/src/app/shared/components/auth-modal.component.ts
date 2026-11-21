@@ -1,12 +1,12 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import {
   AlertCircle,
   CheckCircle2,
   Eye,
   EyeOff,
-  KeyRound,
   Lock,
   LogIn,
   LucideAngularModule,
@@ -19,13 +19,14 @@ import { AuthService } from '../../core/services/auth.service';
 import { ObraService } from '../../core/services/obra.service';
 import { UiStateService } from '../../core/services/ui-state.service';
 import { UserProfile } from '../../core/models/types';
+import { GoogleSignInButtonComponent } from '../../features/auth/google-sign-in-button.component';
 
-type AuthMode = 'login' | 'register' | 'recovery';
+type AuthMode = 'login' | 'register';
 
 @Component({
   selector: 'app-auth-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, LucideAngularModule],
+  imports: [CommonModule, FormsModule, LucideAngularModule, GoogleSignInButtonComponent],
   template: `
     @if (ui.authModalOpen()) {
       <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in">
@@ -37,18 +38,16 @@ type AuthMode = 'login' | 'register' | 'recovery';
           <div class="px-6 pt-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-500 flex items-center justify-center">
-                <lucide-icon [img]="mode() === 'register' ? UserPlus : mode() === 'recovery' ? KeyRound : LogIn" class="w-5 h-5"></lucide-icon>
+                <lucide-icon [img]="mode() === 'register' ? UserPlus : LogIn" class="w-5 h-5"></lucide-icon>
               </div>
               <div>
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white">
                   @if (mode() === 'login') { Acessar ConstruTec }
-                  @else if (mode() === 'register') { Criar Nova Conta }
-                  @else { Recuperar Senha }
+                  @else { Criar Nova Conta }
                 </h2>
                 <p class="text-xs text-slate-500 dark:text-slate-400">
                   @if (mode() === 'login') { Entre para realizar cálculos, salvar orçamentos e acompanhar suas obras }
-                  @else if (mode() === 'register') { Cadastre-se em segundos com e-mail válido }
-                  @else { Informe seu e-mail para receber uma senha provisória }
+                  @else { Cadastre-se em segundos com e-mail válido }
                 </p>
               </div>
             </div>
@@ -70,8 +69,7 @@ type AuthMode = 'login' | 'register' | 'recovery';
             }
 
             <!-- Alternador Login / Cadastro -->
-            @if (mode() !== 'recovery') {
-              <div class="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+            <div class="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
                 <button
                   type="button"
                   (click)="switchMode('login')"
@@ -92,8 +90,7 @@ type AuthMode = 'login' | 'register' | 'recovery';
                 >
                   Criar Conta
                 </button>
-              </div>
-            }
+            </div>
 
             @if (errorMsg()) {
               <div class="flex items-start gap-2 p-3 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-200 text-xs font-medium">
@@ -120,7 +117,7 @@ type AuthMode = 'login' | 'register' | 'recovery';
                       name="email"
                       [(ngModel)]="email"
                       required
-                      placeholder="seu.email@exemplo.com"
+                      placeholder="  seu.email@exemplo.com"
                       class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
                     />
                   </div>
@@ -131,7 +128,7 @@ type AuthMode = 'login' | 'register' | 'recovery';
                     <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200">Senha</label>
                     <button
                       type="button"
-                      (click)="switchMode('recovery')"
+                      (click)="navigateToForgotPassword()"
                       class="text-xs font-medium text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
                     >
                       Esqueci minha senha
@@ -144,7 +141,7 @@ type AuthMode = 'login' | 'register' | 'recovery';
                       name="password"
                       [(ngModel)]="password"
                       required
-                      placeholder="••••••"
+                      placeholder="  ••••••"
                       class="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
                     />
                     <button
@@ -175,15 +172,7 @@ type AuthMode = 'login' | 'register' | 'recovery';
                 </div>
               </div>
 
-              <button
-                type="button"
-                (click)="handleGoogleLogin()"
-                [disabled]="loading()"
-                class="w-full py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-white font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
-              >
-                <span class="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-black flex items-center justify-center">G</span>
-                Entrar com Google
-              </button>
+              <app-google-sign-in-button (credential)="handleGoogleLogin($event)"></app-google-sign-in-button>
             } @else if (mode() === 'register') {
               <form (ngSubmit)="handleRegister()" class="space-y-3.5">
                 <div>
@@ -262,68 +251,6 @@ type AuthMode = 'login' | 'register' | 'recovery';
                   {{ loading() ? 'Criando Conta...' : 'Concluir Cadastro' }}
                 </button>
               </form>
-            } @else {
-              <!-- Recuperação de Senha com Senha Provisória -->
-              <div class="space-y-4">
-                @if (!provisionalSent()) {
-                  <form (ngSubmit)="handleRequestRecovery()" class="space-y-4">
-                    <div>
-                      <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">E-mail cadastrado</label>
-                      <div class="relative">
-                        <lucide-icon [img]="Mail" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
-                        <input
-                          type="email"
-                          name="recEmail"
-                          [(ngModel)]="email"
-                          required
-                          placeholder="seu.email@exemplo.com"
-                          class="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-amber-500"
-                        />
-                      </div>
-                      <p class="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-                        Uma senha provisória será gerada e enviada para o e-mail informado.
-                      </p>
-                    </div>
-                    <button
-                      type="submit"
-                      [disabled]="loading()"
-                      class="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-slate-950 font-bold text-sm transition-colors cursor-pointer"
-                    >
-                      {{ loading() ? 'Enviando Senha Provisória...' : 'Enviar Senha Provisória' }}
-                    </button>
-                  </form>
-                } @else {
-                  <div class="space-y-3.5">
-                    @if (provisionalPassword()) {
-                      <div class="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 text-xs space-y-1">
-                        <p class="font-semibold">Senha provisória gerada para <span class="underline">{{ email }}</span>:</p>
-                        <p class="font-mono text-base font-extrabold tracking-wider text-amber-700 dark:text-amber-300 select-all">
-                          {{ provisionalPassword() }}
-                        </p>
-                        <p class="text-[11px] text-amber-800/80 dark:text-amber-200/80">
-                          Guarde esta senha e altere-a após entrar em "Alterar Senha" no menu do perfil.
-                        </p>
-                      </div>
-                    }
-
-                    <button
-                      type="button"
-                      (click)="goToLoginWithProvisional()"
-                      class="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-sm transition-colors cursor-pointer"
-                    >
-                      Ir para o Login
-                    </button>
-                  </div>
-                }
-
-                <button
-                  type="button"
-                  (click)="switchMode('login')"
-                  class="w-full py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer"
-                >
-                  Voltar para Login
-                </button>
-              </div>
             }
           </div>
         </div>
@@ -333,6 +260,7 @@ type AuthMode = 'login' | 'register' | 'recovery';
 })
 export class AuthModalComponent {
   readonly ui = inject(UiStateService);
+  private readonly router = inject(Router);
   private readonly auth = inject(AuthService);
   private readonly obraService = inject(ObraService);
 
@@ -341,8 +269,6 @@ export class AuthModalComponent {
   readonly loading = signal<boolean>(false);
   readonly errorMsg = signal<string>('');
   readonly successMsg = signal<string>('');
-  readonly provisionalSent = signal<boolean>(false);
-  readonly provisionalPassword = signal<string>('');
 
   email = '';
   password = '';
@@ -352,7 +278,6 @@ export class AuthModalComponent {
   readonly X = X;
   readonly LogIn = LogIn;
   readonly UserPlus = UserPlus;
-  readonly KeyRound = KeyRound;
   readonly Mail = Mail;
   readonly Lock = Lock;
   readonly User = User;
@@ -365,17 +290,20 @@ export class AuthModalComponent {
     this.mode.set(nextMode);
     this.errorMsg.set('');
     this.successMsg.set('');
-    this.provisionalSent.set(false);
-    this.provisionalPassword.set('');
   }
 
   close(): void {
     this.errorMsg.set('');
     this.successMsg.set('');
-    this.provisionalSent.set(false);
-    this.provisionalPassword.set('');
     this.mode.set('login');
     this.ui.closeAuthModal();
+  }
+
+  navigateToForgotPassword(): void {
+    this.close();
+    void this.router.navigateByUrl('/esqueci-senha', {
+      state: { recoveryEmail: this.email.trim() }
+    });
   }
 
   async handleLogin(): Promise<void> {
@@ -414,10 +342,10 @@ export class AuthModalComponent {
     this.close();
   }
 
-  async handleGoogleLogin(): Promise<void> {
+  async handleGoogleLogin(idToken: string): Promise<void> {
     this.errorMsg.set('');
     this.loading.set(true);
-    const res = await this.auth.loginWithGoogle();
+    const res = await this.auth.loginWithGoogle(idToken);
     this.loading.set(false);
 
     if (!res.success || !res.user) {
@@ -427,30 +355,9 @@ export class AuthModalComponent {
 
     await this.obraService.loadBudgets(true, res.user.id);
     this.close();
-  }
-
-  async handleRequestRecovery(): Promise<void> {
-    this.errorMsg.set('');
-    this.successMsg.set('');
-    this.loading.set(true);
-    const res = await this.auth.requestPasswordRecovery(this.email);
-    this.loading.set(false);
-
-    if (!res.success) {
-      this.errorMsg.set(res.error || 'E-mail não localizado.');
-      return;
+    if (this.auth.isAdmin(res.user)) {
+      this.ui.navigateTo('admin');
     }
-
-    this.provisionalSent.set(true);
-    this.provisionalPassword.set(res.provisionalPassword || '');
-    this.successMsg.set(res.message || 'Senha provisória enviada para o seu e-mail.');
   }
 
-  goToLoginWithProvisional(): void {
-    const prov = this.provisionalPassword();
-    if (prov) {
-      this.password = prov;
-    }
-    this.switchMode('login');
-  }
 }

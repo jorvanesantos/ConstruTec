@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ArrowLeft, LucideAngularModule, MapPin, Package, Search } from 'lucide-angular';
+import { ArrowLeft, LucideAngularModule, Package, Search } from 'lucide-angular';
 import { MaterialService } from '../../core/services/material.service';
 import { UiStateService } from '../../core/services/ui-state.service';
 import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
@@ -24,18 +24,10 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
           </button>
           <h1 class="font-display text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2.5">
             <lucide-icon [img]="Package" class="w-7 h-7 text-amber-500"></lucide-icon>
-            Catálogo de Materiais e Preços Regionais
+            Catálogo de Materiais e Preços médios com base no SINAPI - Sistema Nacional de Pesquisa de Custos e Índeces da Constução Civil
           </h1>
         </div>
 
-        <button
-          type="button"
-          (click)="ui.locationModalOpen.set(true)"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-amber-500 cursor-pointer"
-        >
-          <lucide-icon [img]="MapPin" class="w-4 h-4 text-amber-500"></lucide-icon>
-          <span>{{ ui.currentLocation().stateName }} ({{ ui.currentLocation().priceMultiplier.toFixed(2) }}x)</span>
-        </button>
       </div>
 
       <div class="flex flex-col sm:flex-row gap-3">
@@ -74,7 +66,7 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
             </div>
 
             <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
-              <span class="text-xs text-slate-500 dark:text-slate-400">Estimativa {{ ui.currentLocation().uf }}:</span>
+              <span class="text-xs text-slate-500 dark:text-slate-400">Estimativa:</span>
               <span class="text-base font-extrabold text-amber-600 dark:text-amber-400">
                 {{ getAdjustedPrice(item.basePrice) | brl }}
                 <span class="text-[11px] font-normal text-slate-500">/{{ item.baseUnit }}</span>
@@ -112,7 +104,6 @@ export class MaterialsCatalogComponent {
 
   readonly ArrowLeft = ArrowLeft;
   readonly Package = Package;
-  readonly MapPin = MapPin;
   readonly Search = Search;
 
   getAdjustedPrice(basePrice: number): number {

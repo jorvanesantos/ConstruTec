@@ -46,13 +46,14 @@ export async function createBudget(req: AuthenticatedRequest, res: Response): Pr
       workType: body.workType || body.calculationResult?.workType || 'muro',
       workTypeName: body.workTypeName || body.calculationResult?.workTypeName || 'Obra Civil',
       calculationResult: body.calculationResult,
+      calculationResults: Array.isArray(body.calculationResults) && body.calculationResults.length
+        ? body.calculationResults
+        : [body.calculationResult],
       status: body.status || 'rascunho',
       createdAt: body.createdAt || now,
       updatedAt: now,
       notes: body.notes || undefined
     };
-
-    budgetsStore.unshift(newBudget);
 
     const newWork: AdminUserWork = {
       id: budgetId,
@@ -69,14 +70,18 @@ export async function createBudget(req: AuthenticatedRequest, res: Response): Pr
       createdAt: now,
       calculationResult: newBudget.calculationResult
     };
-    userWorksStore.unshift(newWork);
-
     const dbPool = getDbPool();
     const dbState = getDbState();
+    if (!dbState.connected || !dbPool) {
+      res.status(503).json({ error: 'Banco de dados indisponível. O orçamento não foi salvo.' });
+      return;
+    }
     if (dbState.connected && dbPool) {
+      const connection = await dbPool.getConnection();
       try {
+        await connection.beginTransaction();
         const numericUserId = newBudget.userId && /^\d+$/.test(String(newBudget.userId)) ? Number(newBudget.userId) : null;
-        const [ins]: any = await dbPool.query(
+        const [ins]: any = await connection.query(
           `INSERT INTO obra (codigo_externo, usuario_id, titulo, cliente_nome, tipo_obra, tipo_obra_nome, custo_total_estimado, status, dados_localizacao, resultado_calculo)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
@@ -89,11 +94,11 @@ export async function createBudget(req: AuthenticatedRequest, res: Response): Pr
             newWork.totalCost,
             newBudget.status,
             JSON.stringify(location),
-            JSON.stringify(newBudget.calculationResult || {})
+            JSON.stringify({ ...newBudget.calculationResult, calculationResults: newBudget.calculationResults })
           ]
         );
         if (ins?.insertId) {
-          await dbPool.query(
+          await connection.query(
             `INSERT INTO medicao (obra_id, area_liquida_m2, volume_m3, desperdicio_percentual, parametros_json)
              VALUES (?, ?, ?, ?, ?)`,
             [
@@ -105,10 +110,23 @@ export async function createBudget(req: AuthenticatedRequest, res: Response): Pr
             ]
           );
         }
+        await connection.commit();
       } catch (err: any) {
-        console.warn('[MySQL] Erro ao persistir obra/medição:', err.message);
+        try {
+          await connection.rollback();
+        } catch (rollbackError) {
+          console.error('[MySQL] Erro ao desfazer orçamento:', rollbackError);
+        }
+        console.error('[MySQL] Erro ao persistir obra/medição:', err.message);
+        res.status(503).json({ error: 'Não foi possível salvar o orçamento no banco de dados.' });
+        return;
+      } finally {
+        connection.release();
       }
     }
+
+    budgetsStore.unshift(newBudget);
+    userWorksStore.unshift(newWork);
 
     await recordAuditLog(
       'CRIAR_CALCULO',
@@ -148,30 +166,63 @@ export async function updateBudget(req: AuthenticatedRequest, res: Response): Pr
     return;
   }
 
+  const results = req.body?.calculationResults ?? target.calculationResults ?? [target.calculationResult];
+  if (!Array.isArray(results) || results.length === 0 || results.some(result =>
+    !result || typeof result.totalEstimatedCost !== 'number' || !Number.isFinite(result.totalEstimatedCost) ||
+    result.totalEstimatedCost < 0 || !Array.isArray(result.materials)
+  )) {
+    res.status(400).json({ error: 'Os cálculos do orçamento são inválidos.' });
+    return;
+  }
   const updated: SavedBudget = {
     ...target,
-    ...req.body,
-    id: target.id,
+    title: typeof req.body?.title === 'string' ? req.body.title.trim() || target.title : target.title,
+    clientName: typeof req.body?.clientName === 'string' ? req.body.clientName.trim() : target.clientName,
+    status: ['rascunho', 'aprovado', 'em_andamento', 'concluido'].includes(req.body?.status) ? req.body.status : target.status,
+    workType: results[0].workType,
+    workTypeName: results[0].workTypeName,
+    calculationResult: results[0],
+    calculationResults: results,
     updatedAt: new Date().toISOString()
   };
-  budgetsStore[idx] = updated;
 
+  const totalCost = Math.round(results.reduce((sum, result) => sum + result.totalEstimatedCost, 0) * 100) / 100;
+
+  const dbPool = getDbPool();
+  const dbState = getDbState();
+  if (!dbState.connected || !dbPool) {
+    res.status(503).json({ error: 'Banco de dados indisponível. O orçamento não foi alterado.' });
+    return;
+  }
+  try {
+    const [result] = await dbPool.execute<import('mysql2').ResultSetHeader>(
+      `UPDATE obra SET titulo = ?, cliente_nome = ?, status = ?, tipo_obra = ?, tipo_obra_nome = ?, custo_total_estimado = ?,
+       resultado_calculo = ? WHERE codigo_externo = ?`,
+      [updated.title, updated.clientName || null, updated.status, updated.workType, updated.workTypeName, totalCost,
+        JSON.stringify({ ...updated.calculationResult, calculationResults: results }), id]
+    );
+    if (!result.affectedRows) {
+      res.status(404).json({ error: 'Orçamento não encontrado no banco de dados.' });
+      return;
+    }
+  } catch (err) {
+    console.error('[MySQL] Erro ao atualizar orçamento:', err);
+    res.status(503).json({ error: 'Não foi possível atualizar o orçamento no banco de dados.' });
+    return;
+  }
+
+  budgetsStore[idx] = updated;
   const wIdx = userWorksStore.findIndex(w => w.id === id);
   if (wIdx !== -1) {
     userWorksStore[wIdx] = {
       ...userWorksStore[wIdx],
       title: updated.title,
       status: updated.status,
-      totalCost: Number(updated.calculationResult?.totalEstimatedCost ?? userWorksStore[wIdx].totalCost)
+      workType: updated.workType,
+      workTypeName: updated.workTypeName,
+      totalCost,
+      calculationResult: updated.calculationResult
     };
-  }
-
-  const dbPool = getDbPool();
-  const dbState = getDbState();
-  if (dbState.connected && dbPool) {
-    await dbPool
-      .query('UPDATE obra SET titulo = ?, status = ? WHERE codigo_externo = ?', [updated.title, updated.status, id])
-      .catch(() => {});
   }
 
   await recordAuditLog(

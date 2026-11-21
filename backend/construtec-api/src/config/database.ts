@@ -1,4 +1,5 @@
 import mysql from 'mysql2/promise';
+import type { RowDataPacket } from 'mysql2';
 
 export const DB_CONFIG = {
   host: process.env.DB_HOST || 'localhost',
@@ -38,6 +39,8 @@ export async function ensureDatabaseSchema(): Promise<void> {
         nome VARCHAR(150) NOT NULL,
         email VARCHAR(180) NOT NULL UNIQUE,
         senha_hash VARCHAR(255) NULL,
+        reset_token VARCHAR(255) NULL,
+        reset_token_expira DATETIME NULL,
         avatar_url MEDIUMTEXT NULL,
         perfil VARCHAR(80) DEFAULT 'cliente',
         tipo_usuario ENUM('ADM_MASTER', 'PROPRIETARIO', 'ADM', 'USUARIO') NOT NULL DEFAULT 'USUARIO',
@@ -49,6 +52,23 @@ export async function ensureDatabaseSchema(): Promise<void> {
         atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB;
     `);
+
+    const [resetColumns] = await dbPool.query<RowDataPacket[]>(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'usuario'
+        AND COLUMN_NAME IN ('reset_token', 'reset_token_expira')
+    `);
+    const existingColumns = new Set(resetColumns.map(column => String(column.COLUMN_NAME)));
+    const columnsToAdd = [
+      !existingColumns.has('reset_token') ? 'ADD COLUMN reset_token VARCHAR(255) NULL' : '',
+      !existingColumns.has('reset_token_expira') ? 'ADD COLUMN reset_token_expira DATETIME NULL' : ''
+    ].filter(Boolean);
+    if (columnsToAdd.length > 0) {
+      await dbPool.query(`ALTER TABLE usuario ${columnsToAdd.join(', ')}`);
+      console.log('[MySQL] Colunas de redefinição de senha adicionadas à tabela usuario.');
+    }
 
     await dbPool.query(`ALTER TABLE usuario MODIFY COLUMN avatar_url MEDIUMTEXT NULL`).catch(() => {});
 

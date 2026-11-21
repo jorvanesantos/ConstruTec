@@ -8,12 +8,16 @@ import { DashboardComponent } from './features/obras/dashboard.component';
 import { AboutPageComponent } from './features/sobre/about-page.component';
 import { AdminDashboardComponent } from './features/admin/admin-dashboard.component';
 import { AuthPageComponent } from './features/auth/auth-page.component';
+import { ForgotPasswordComponent } from './features/auth/forgot-password.component';
+import { ResetPasswordComponent } from './features/auth/reset-password.component';
 
 export const routes: Routes = [
   { path: '', component: HomeComponent },
   { path: 'login', component: AuthPageComponent },
-  { path: 'calculo', component: CalculatorComponent },
-  { path: 'calculo/:tipo', component: CalculatorComponent },
+  { path: 'esqueci-senha', component: ForgotPasswordComponent },
+  { path: 'redefinir-senha', component: ResetPasswordComponent },
+  { path: 'calculo', component: CalculatorComponent, canDeactivate: [component => component.canLeave()] },
+  { path: 'calculo/:tipo', component: CalculatorComponent, canDeactivate: [component => component.canLeave()] },
   { path: 'historico', component: BudgetListComponent },
   { path: 'obras', component: MaterialsCatalogComponent },
   { path: 'materiais', component: MaterialsCatalogComponent },

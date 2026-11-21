@@ -82,7 +82,7 @@ interface FaqItem {
               </span>
               <span class="inline-flex items-center gap-1.5">
                 <lucide-icon [img]="MapPin" class="w-4 h-4 text-amber-500"></lucide-icon>
-                Tabela regional ajustada ({{ ui.currentLocation().stateName }})
+                Tabela de preços ajustável
               </span>
               <span class="inline-flex items-center gap-1.5">
                 <lucide-icon [img]="ShieldCheck" class="w-4 h-4 text-sky-500"></lucide-icon>
@@ -345,7 +345,7 @@ export class HomeComponent {
     },
     {
       question: 'Como os preços dos materiais são calculados para a minha região?',
-      answer: 'Utilizamos uma base de preços de referência ajustada pelos multiplicadores estaduais inspirados no SINAPI. Você pode trocar seu estado a qualquer momento clicando na sigla UF no topo da tela.'
+      answer: 'Utilizamos uma base de preços de referência ajustada pelos multiplicadores estaduais inspirados no SINAPI. Você pode trocar seu estado a qualquer momento usando o botão SINAPI no canto inferior esquerdo.'
     },
     {
       question: 'O que significa a margem de desperdício (%)?',

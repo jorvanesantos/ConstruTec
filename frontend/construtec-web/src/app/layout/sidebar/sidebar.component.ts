@@ -84,10 +84,6 @@ interface NavItem {
             </nav>
           </div>
 
-          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
-            <p class="font-bold text-slate-900 dark:text-white">Região Atual</p>
-            <p class="mt-0.5">{{ ui.currentLocation().city }} ({{ ui.currentLocation().uf }})</p>
-          </div>
         </aside>
       </div>
     }

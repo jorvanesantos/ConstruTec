@@ -44,6 +44,17 @@ import { RegionalLocationModalComponent } from './shared/components/regional-loc
         </main>
       </div>
 
+      <button
+        type="button"
+        (click)="ui.locationModalOpen.set(true)"
+        class="no-print fixed bottom-4 left-4 z-30 inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-lg hover:border-amber-500 cursor-pointer"
+        aria-label="Alterar região da tabela SINAPI"
+        title="Alterar região da tabela SINAPI"
+      >
+        <span aria-hidden="true">SINAPI</span>
+        <span>{{ ui.detectingLocation() ? 'Localizando...' : ui.currentLocation().uf }}</span>
+      </button>
+
       <!-- Modais Globais -->
       <app-auth-modal></app-auth-modal>
       <app-avatar-modal></app-avatar-modal>

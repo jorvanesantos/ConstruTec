@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import confetti from 'canvas-confetti';
 import {
   Anchor,
@@ -15,7 +16,6 @@ import {
   Info,
   Layers,
   LucideAngularModule,
-  MapPin,
   Paintbrush,
   Printer,
   Save,
@@ -23,6 +23,7 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   TriangleAlert,
+  Trash2,
   Wrench
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
@@ -31,8 +32,14 @@ import { MaterialService } from '../../core/services/material.service';
 import { ObraService } from '../../core/services/obra.service';
 import { UiStateService } from '../../core/services/ui-state.service';
 import { CalculationResult, SavedBudget, WorkTypeKey } from '../../core/models/types';
+import { budgetCalculations } from '../../core/models/budget-calculations';
 import { AuthGuardViewComponent } from '../../shared/components/auth-guard-view.component';
 import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
+
+interface PendingCalculation {
+  result: CalculationResult;
+  replaceIndex: number | null;
+}
 
 @Component({
   selector: 'app-calculator',
@@ -62,15 +69,55 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
           </h1>
         </div>
 
-        <button
-          type="button"
-          (click)="ui.locationModalOpen.set(true)"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:border-amber-500 transition-colors cursor-pointer"
-        >
-          <lucide-icon [img]="MapPin" class="w-4 h-4 text-amber-500"></lucide-icon>
-          <span>Base Regional: {{ ui.currentLocation().city }} ({{ ui.currentLocation().uf }})</span>
-        </button>
       </div>
+
+      @if (targetBudget()) {
+        <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-200">
+          {{ editingIndex() === null ? 'Adicionando cálculo ao orçamento:' : 'Editando cálculo do orçamento:' }} <strong>{{ targetBudget()?.title }}</strong>
+        </div>
+      }
+      @if (legacyWarning()) {
+        <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-200" role="alert">
+          Este cálculo antigo não guardou todos os parâmetros originais. Confira e informe todas as medidas antes de recalcular; o resultado salvo só será substituído quando você salvar.
+        </div>
+      }
+      @if (errorMessage()) {
+        <div class="p-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-200" role="alert">{{ errorMessage() }}</div>
+      }
+      @if (savedFeedback() && step() === 1) {
+        <div class="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-sm text-emerald-700 dark:text-emerald-300" role="status">
+          Orçamento salvo no seu histórico com sucesso!
+          <button type="button" (click)="ui.navigateTo('budgets')" class="font-bold underline cursor-pointer">Ver meus orçamentos</button>
+        </div>
+      }
+
+      @if (pendingCalculations().length) {
+        <section class="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 space-y-3">
+          <div>
+            <h2 class="text-sm font-bold">Cálculos aguardando salvamento</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Esses cálculos ainda não foram salvos. Você pode calcular outro ou salvar o orçamento agora.</p>
+          </div>
+          @for (pending of pendingCalculations(); track $index) {
+            <div class="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 text-sm">
+              <span>{{ pending.result.workTypeName }} · {{ pending.result.totalEstimatedCost | brl }} @if (pending.replaceIndex !== null) { (edição) }</span>
+              <button type="button" (click)="removePendingCalculation($index)" [disabled]="saving()" [attr.aria-label]="'Remover cálculo pendente ' + ($index + 1)" class="text-red-600 dark:text-red-400 cursor-pointer">
+                <lucide-icon [img]="Trash2" class="w-4 h-4"></lucide-icon>
+              </button>
+            </div>
+          }
+          <p class="text-sm font-bold text-amber-700 dark:text-amber-400">
+            Total do orçamento: {{ totalForBudget() | brl }}
+          </p>
+          @if (step() === 1) {
+            <div class="flex flex-wrap gap-2">
+              <button type="button" (click)="saveBudget()" [disabled]="saving() || invalidContext()" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs disabled:opacity-60 cursor-pointer">
+                {{ saving() ? 'Salvando...' : 'Salvar cálculos no orçamento' }}
+              </button>
+              <button type="button" (click)="openPrint()" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold cursor-pointer">Visualizar / Imprimir</button>
+            </div>
+          }
+        </section>
+      }
 
       <!-- Seletor de Tipo de Obra -->
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-xs">
@@ -541,6 +588,11 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
 
             <div class="lg:col-span-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-4">
               <h4 class="text-sm font-bold text-slate-900 dark:text-white">Salvar & Exportar Orçamento</h4>
+              @if (calculationsForBudget().length > 1) {
+                <p class="text-sm font-bold text-amber-700 dark:text-amber-400">
+                  Total do orçamento ({{ calculationsForBudget().length }} cálculos): {{ totalForBudget() | brl }}
+                </p>
+              }
 
               <div>
                 <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Nome do Projeto / Obra</label>
@@ -574,8 +626,16 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
               <div class="flex flex-col gap-2.5 pt-1">
                 <button
                   type="button"
+                  (click)="addAnotherCalculation()"
+                  [disabled]="saving() || invalidContext()"
+                  class="w-full py-2.5 px-4 rounded-xl border border-amber-500 text-amber-700 dark:text-amber-400 font-bold text-sm hover:bg-amber-500/10 disabled:opacity-60 cursor-pointer"
+                >
+                  Adicionar outro cálculo ao orçamento
+                </button>
+                <button
+                  type="button"
                   (click)="saveBudget()"
-                  [disabled]="saving()"
+                  [disabled]="saving() || invalidContext()"
                   class="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
                 >
                   <lucide-icon [img]="Save" class="w-4 h-4"></lucide-icon>
@@ -615,6 +675,7 @@ export class CalculatorComponent implements OnInit {
   private readonly calculoService = inject(CalculoService);
   private readonly materialService = inject(MaterialService);
   private readonly obraService = inject(ObraService);
+  private readonly router = inject(Router);
 
   readonly workTypes = this.materialService.getStaticWorkTypes();
   readonly selectedType = signal<WorkTypeKey>('muro');
@@ -623,6 +684,12 @@ export class CalculatorComponent implements OnInit {
   readonly saving = signal(false);
   readonly savedFeedback = signal(false);
   readonly copied = signal(false);
+  readonly targetBudget = signal<SavedBudget | null>(null);
+  readonly editingIndex = signal<number | null>(null);
+  readonly legacyWarning = signal(false);
+  readonly errorMessage = signal('');
+  readonly invalidContext = signal(false);
+  readonly pendingCalculations = signal<PendingCalculation[]>([]);
 
   // Inputs do formulário
   length = 10;
@@ -660,7 +727,6 @@ export class CalculatorComponent implements OnInit {
 
   readonly ArrowLeft = ArrowLeft;
   readonly Calculator = Calculator;
-  readonly MapPin = MapPin;
   readonly SlidersHorizontal = SlidersHorizontal;
   readonly Info = Info;
   readonly TriangleAlert = TriangleAlert;
@@ -669,12 +735,86 @@ export class CalculatorComponent implements OnInit {
   readonly Share2 = Share2;
   readonly Check = Check;
   readonly CheckCircle2 = CheckCircle2;
+  readonly Trash2 = Trash2;
 
-  ngOnInit(): void {
+  @HostListener('window:beforeunload', ['$event'])
+  warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (this.pendingCalculations().length) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+  }
+
+  canLeave(): boolean {
+    return !this.pendingCalculations().length ||
+      window.confirm('Você tem cálculos ainda não salvos. Deseja sair e descartá-los?');
+  }
+
+  async ngOnInit(): Promise<void> {
     this.selectType(this.ui.selectedWorkType());
     if (!this.auth.isLoggedIn()) {
       this.ui.openAuthModal('Faça login para realizar cálculos de materiais e gerar orçamentos.');
+      return;
     }
+    const state = this.router.getCurrentNavigation()?.extras.state || window.history.state;
+    if (typeof state?.budgetId === 'string') {
+      if (!this.obraService.budgets().some(budget => budget.id === state.budgetId)) {
+        await this.obraService.loadBudgets(true, this.auth.currentUser()?.id);
+      }
+      const budget = this.obraService.budgets().find(item => item.id === state.budgetId);
+      if (!budget) {
+        this.errorMessage.set('Orçamento não encontrado. Volte aos seus orçamentos e tente novamente.');
+        this.invalidContext.set(true);
+        return;
+      }
+      this.targetBudget.set(budget);
+      this.budgetTitle = budget.title;
+      this.clientName = budget.clientName || '';
+      if (Number.isInteger(state.calculationIndex)) {
+        const index: number = state.calculationIndex;
+        const calculation = budgetCalculations(budget)[index];
+        if (!calculation) {
+          this.errorMessage.set('Cálculo não encontrado. Volte aos seus orçamentos e tente novamente.');
+          this.targetBudget.set(null);
+          this.invalidContext.set(true);
+          return;
+        }
+        this.editingIndex.set(index);
+        this.selectType(calculation.workType);
+        this.ui.setLocation(calculation.location || budget.location, true);
+        if (calculation.formValues) {
+          this.restoreFormValues(calculation.formValues);
+        } else {
+          this.legacyWarning.set(true);
+        }
+      }
+    }
+  }
+
+  private getFormValues(): Record<string, string | number | boolean> {
+    return {
+      length: this.length, height: this.height, width: this.width, depth: this.depth,
+      blockType: this.blockType, renderType: this.renderType, tileType: this.tileType,
+      tileSizeCm: this.tileSizeCm, wallsCount: this.wallsCount, coats: this.coats,
+      needsSealer: this.needsSealer, needsPutty: this.needsPutty, mixRatio: this.mixRatio,
+      foundationType: this.foundationType, roofSlope: this.roofSlope, roofTileType: this.roofTileType,
+      includeWoodwork: this.includeWoodwork, doorsCount: this.doorsCount, doorWidth: this.doorWidth,
+      doorHeight: this.doorHeight, windowsCount: this.windowsCount, windowWidth: this.windowWidth,
+      windowHeight: this.windowHeight, customDescription: this.customDescription, customArea: this.customArea,
+      thicknessCm: this.thicknessCm, includeMasonry: this.includeMasonry, includePainting: this.includePainting,
+      wastePercentage: this.wastePercentage
+    };
+  }
+
+  private restoreFormValues(values: Record<string, string | number | boolean>): void {
+    const defaults = this.getFormValues();
+    const validValues: Record<string, string | number | boolean> = {};
+    for (const key of Object.keys(defaults)) {
+      if (typeof values[key] === typeof defaults[key]) {
+        validValues[key] = values[key];
+      }
+    }
+    Object.assign(this, validValues);
   }
 
   currentWorkInfo() {
@@ -708,6 +848,8 @@ export class CalculatorComponent implements OnInit {
   }
 
   async runCalculation(): Promise<void> {
+    if (this.invalidContext()) return;
+    this.errorMessage.set('');
     if (!this.auth.isLoggedIn()) {
       this.ui.openAuthModal('Faça login para realizar cálculos de materiais e gerar orçamentos.');
       return;
@@ -725,7 +867,7 @@ export class CalculatorComponent implements OnInit {
       linearMetersOrUnits: this.length,
       blockType: this.blockType,
       renderType: this.renderType,
-      tileType: this.tileType,
+      tileType: type === 'telhado' ? this.roofTileType : this.tileType,
       tileSizeCm: this.tileSizeCm,
       wallsCount: this.wallsCount,
       coats: this.coats,
@@ -734,6 +876,7 @@ export class CalculatorComponent implements OnInit {
       mixRatio: this.mixRatio,
       foundationType: this.foundationType,
       slopePercentage: this.roofSlope,
+      roofTileType: this.roofTileType,
       includeWoodwork: this.includeWoodwork,
       doorsCount: this.doorsCount,
       doorWidth: this.doorWidth,
@@ -752,8 +895,10 @@ export class CalculatorComponent implements OnInit {
 
     try {
       const computed = await this.calculoService.calculateRemote(type, payload);
-      this.result.set(computed);
-      this.budgetTitle = `${computed.workTypeName} (${computed.areaM2} m²)`;
+      this.result.set({ ...computed, formValues: this.getFormValues(), location: this.ui.currentLocation() });
+      if (!this.targetBudget() && !this.pendingCalculations().length) {
+        this.budgetTitle = `${computed.workTypeName} (${computed.areaM2} m²)`;
+      }
       this.savedFeedback.set(false);
       this.step.set(2);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -761,13 +906,61 @@ export class CalculatorComponent implements OnInit {
       if (err?.status === 401 || err?.status === 403) {
         this.auth.logout();
         this.ui.openAuthModal('Sessão expirada. Faça login novamente para continuar calculando.');
+      } else {
+        this.errorMessage.set('Não foi possível calcular. Revise os dados e tente novamente.');
       }
     }
   }
 
+  addAnotherCalculation(): void {
+    const result = this.result();
+    if (!result || this.saving()) return;
+    if (!this.savedFeedback()) {
+      this.pendingCalculations.update(items => [...items, { result, replaceIndex: this.editingIndex() }]);
+    }
+    this.editingIndex.set(null);
+    this.result.set(null);
+    this.savedFeedback.set(false);
+    this.step.set(1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  removePendingCalculation(index: number): void {
+    this.pendingCalculations.update(items => items.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  calculationsForBudget(): CalculationResult[] {
+    const existing = this.targetBudget();
+    const calculations = existing ? [...budgetCalculations(existing)] : [];
+    for (const pending of this.pendingCalculations()) {
+      if (existing && pending.replaceIndex !== null) {
+        calculations[pending.replaceIndex] = pending.result;
+      } else {
+        calculations.push(pending.result);
+      }
+    }
+    const current = this.step() === 2 ? this.result() : null;
+    if (current) {
+      const index = this.editingIndex();
+      if (existing && index !== null) {
+        calculations[index] = current;
+      } else {
+        calculations.push(current);
+      }
+    }
+    return calculations;
+  }
+
+  totalForBudget(): number {
+    return this.calculationsForBudget().reduce((sum, calculation) => sum + calculation.totalEstimatedCost, 0);
+  }
+
   async saveBudget(): Promise<void> {
-    const res = this.result();
-    if (!res) return;
+    if (this.invalidContext() || this.saving()) return;
+    const calculations = this.calculationsForBudget();
+    if (!calculations.length) return;
+    const res = this.step() === 2 ? this.result() : null;
+    const first = calculations[0];
 
     if (!this.auth.isLoggedIn()) {
       this.ui.openAuthModal('Faça login para salvar seu orçamento no histórico e acessar depois.');
@@ -776,25 +969,44 @@ export class CalculatorComponent implements OnInit {
 
     const user = this.auth.currentUser()!;
     this.saving.set(true);
+    this.errorMessage.set('');
 
-    const budget: SavedBudget = {
+    const existing = this.targetBudget();
+    const index = this.editingIndex();
+    const budget: SavedBudget = existing ? {
+      ...existing,
+      title: this.budgetTitle.trim() || existing.title,
+      clientName: this.clientName.trim() || existing.clientName,
+      calculationResult: calculations[0],
+      calculationResults: calculations
+    } : {
       id: `orc_${Date.now()}`,
       userId: user.id,
       userEmail: user.email,
-      title: this.budgetTitle.trim() || `${res.workTypeName} (${res.areaM2} m²)`,
+      title: this.budgetTitle.trim() || `${first.workTypeName} (${first.areaM2} m²)`,
       clientName: this.clientName.trim() || user.name,
       location: this.ui.currentLocation(),
-      workType: res.workType,
-      workTypeName: res.workTypeName,
-      calculationResult: res,
+      workType: first.workType,
+      workTypeName: first.workTypeName,
+      calculationResult: first,
+      calculationResults: calculations,
       status: 'rascunho',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
-    await this.obraService.saveBudget(budget);
-    this.saving.set(false);
-    this.savedFeedback.set(true);
+    try {
+      const saved = existing ? await this.obraService.updateBudget(budget) : await this.obraService.saveBudget(budget);
+      this.targetBudget.set(saved);
+      this.pendingCalculations.set([]);
+      this.editingIndex.set(res ? (index ?? calculations.length - 1) : null);
+      this.savedFeedback.set(true);
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error || 'Não foi possível salvar o orçamento. Tente novamente.');
+      return;
+    } finally {
+      this.saving.set(false);
+    }
 
     try {
       confetti({ particleCount: 70, spread: 60, origin: { y: 0.7 } });
@@ -804,19 +1016,22 @@ export class CalculatorComponent implements OnInit {
   }
 
   openPrint(): void {
-    const res = this.result();
+    const calculations = this.calculationsForBudget();
+    const res = calculations[0];
     if (!res) return;
+    const existing = this.targetBudget();
     const budget: SavedBudget = {
-      id: `preview_${Date.now()}`,
+      id: existing?.id || `preview_${Date.now()}`,
       title: this.budgetTitle || res.workTypeName,
       clientName: this.clientName || undefined,
       location: this.ui.currentLocation(),
       workType: res.workType,
       workTypeName: res.workTypeName,
       calculationResult: res,
-      status: 'rascunho',
-      createdAt: res.calculatedAt,
-      updatedAt: res.calculatedAt
+      calculationResults: calculations,
+      status: existing?.status || 'rascunho',
+      createdAt: existing?.createdAt || res.calculatedAt,
+      updatedAt: existing?.updatedAt || res.calculatedAt
     };
     this.ui.openPrintModal(budget);
   }
@@ -826,7 +1041,6 @@ export class CalculatorComponent implements OnInit {
     if (!res) return;
     const lines = [
       `Orçamento ConstruTec - ${this.budgetTitle || res.workTypeName}`,
-      `Região: ${this.ui.currentLocation().city} (${this.ui.currentLocation().uf})`,
       `Área: ${res.areaM2} m² | Perda: ${res.wastePercentage}%`,
       '',
       ...res.materials.map(m => `- ${m.name}: ${m.commercialQuantity} ${m.unit} (R$ ${m.totalPrice.toFixed(2)})`),
