@@ -8,7 +8,6 @@ import {
   LogIn,
   LogOut,
   LucideAngularModule,
-  MapPin,
   Menu,
   Moon,
   ShieldCheck,
@@ -28,7 +27,7 @@ import { ClickOutsideDirective } from '../../shared/directives/click-outside.dir
   host: { class: 'block no-print' },
   template: `
     <header class="no-print fixed top-0 left-0 right-0 z-40 w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <div class="w-full px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
         <!-- Esquerda: Botão Menu + Logo -->
         <div class="flex items-center gap-3">
           <button
@@ -49,26 +48,8 @@ import { ClickOutsideDirective } from '../../shared/directives/click-outside.dir
           </button>
         </div>
 
-        <!-- Direita: Localização SINAPI, Tema Claro/Escuro, Usuário -->
+        <!-- Direita: Tema Claro/Escuro e Usuário -->
         <div class="flex items-center gap-2 sm:gap-3">
-          <!-- Seletor Regional -->
-          <button
-            type="button"
-            (click)="ui.locationModalOpen.set(true)"
-            class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-            title="Alterar tabela de preços regional SINAPI"
-          >
-            <lucide-icon [img]="MapPin" class="w-3.5 h-3.5 text-amber-500" [ngClass]="ui.detectingLocation() ? 'animate-pulse' : ''"></lucide-icon>
-            @if (ui.detectingLocation()) {
-              <span>Localizando...</span>
-            } @else {
-              <span>{{ ui.currentLocation().uf }}</span>
-              <span class="hidden md:inline text-slate-500 dark:text-slate-400 font-normal">
-                ({{ ui.currentLocation().priceMultiplier.toFixed(2) }}x)
-              </span>
-            }
-          </button>
-
           <!-- Botão único de alternância Claro / Escuro -->
           <button
             type="button"
@@ -220,14 +201,6 @@ import { ClickOutsideDirective } from '../../shared/directives/click-outside.dir
                         Alterar Senha
                       </button>
 
-                      <button
-                        type="button"
-                        (click)="openLocationModal()"
-                        class="sm:hidden w-full px-4 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer"
-                      >
-                        <lucide-icon [img]="MapPin" class="w-4 h-4 text-amber-500"></lucide-icon>
-                        Região: {{ ui.currentLocation().uf }}
-                      </button>
                     </div>
 
                     <div class="pt-1 border-t border-slate-100 dark:border-slate-800">
@@ -258,7 +231,6 @@ export class HeaderComponent {
   readonly dropdownOpen = signal(false);
 
   readonly Menu = Menu;
-  readonly MapPin = MapPin;
   readonly Sun = Sun;
   readonly Moon = Moon;
   readonly LogIn = LogIn;
@@ -294,11 +266,6 @@ export class HeaderComponent {
   openChangePassword(): void {
     this.dropdownOpen.set(false);
     this.ui.changePasswordModalOpen.set(true);
-  }
-
-  openLocationModal(): void {
-    this.dropdownOpen.set(false);
-    this.ui.locationModalOpen.set(true);
   }
 
   logout(): void {

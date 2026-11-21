@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import {
   ArrowLeft,
   Calculator,
@@ -8,7 +9,6 @@ import {
   Lock,
   LogIn,
   LucideAngularModule,
-  MapPin,
   Printer,
   Search,
   Trash2
@@ -17,6 +17,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { ObraService } from '../../core/services/obra.service';
 import { UiStateService } from '../../core/services/ui-state.service';
 import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
+import { budgetCalculations, budgetTotal } from '../../core/models/budget-calculations';
+import { SavedBudget } from '../../core/models/types';
 
 @Component({
   selector: 'app-budget-list',
@@ -111,37 +113,46 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
         } @else {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             @for (budget of filteredBudgets(); track budget.id) {
-              <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4 flex flex-col justify-between">
+              <div (click)="ui.openPrintModal(budget)" class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-amber-500 shadow-xs space-y-4 flex flex-col justify-between cursor-pointer">
                 <div class="space-y-2">
                   <div class="flex items-start justify-between gap-2">
                     <div>
                       <span class="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300">
                         {{ budget.workTypeName }}
                       </span>
-                      <h3 class="text-base font-bold text-slate-900 dark:text-white mt-2">{{ budget.title }}</h3>
+                      <h3 class="text-base font-bold text-slate-900 dark:text-white mt-2">
+                        <button type="button" (click)="$event.stopPropagation(); ui.openPrintModal(budget)" class="text-left hover:underline cursor-pointer">{{ budget.title }}</button>
+                      </h3>
                       @if (budget.clientName) {
                         <p class="text-xs text-slate-500 dark:text-slate-400">Responsável: {{ budget.clientName }}</p>
                       }
                     </div>
                     <span class="text-lg font-extrabold text-amber-600 dark:text-amber-400 shrink-0">
-                      {{ budget.calculationResult.totalEstimatedCost | brl }}
+                      {{ total(budget) | brl }}
                     </span>
                   </div>
 
                   <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400 pt-1">
-                    <span class="inline-flex items-center gap-1">
-                      <lucide-icon [img]="MapPin" class="w-3.5 h-3.5 text-amber-500"></lucide-icon>
-                      {{ budget.location.city }} ({{ budget.location.uf }})
-                    </span>
-                    <span>Área: {{ budget.calculationResult.areaM2 || budget.calculationResult.area }} m²</span>
+                    <span>{{ calculations(budget).length }} cálculo(s)</span>
                     <span>{{ budget.createdAt | date: 'dd/MM/yyyy' }}</span>
+                  </div>
+                  <div class="space-y-2 pt-2">
+                    @for (calculation of calculations(budget); track $index) {
+                      <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 dark:bg-slate-800 p-2 text-xs">
+                        <span>{{ calculation.workTypeName }} · {{ calculation.totalEstimatedCost | brl }}</span>
+                        <button type="button" (click)="$event.stopPropagation(); editCalculation(budget, $index)" class="font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer">Editar cálculo</button>
+                      </div>
+                    }
                   </div>
                 </div>
 
-                <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <div class="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <button type="button" (click)="$event.stopPropagation(); addCalculation(budget)" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-xs font-semibold text-slate-950 cursor-pointer">
+                    <lucide-icon [img]="Calculator" class="w-3.5 h-3.5"></lucide-icon> Adicionar cálculo
+                  </button>
                   <button
                     type="button"
-                    (click)="ui.openPrintModal(budget)"
+                    (click)="$event.stopPropagation(); ui.openPrintModal(budget)"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer"
                   >
                     <lucide-icon [img]="Printer" class="w-3.5 h-3.5"></lucide-icon>
@@ -149,7 +160,7 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
                   </button>
                   <button
                     type="button"
-                    (click)="remove(budget.id)"
+                    (click)="$event.stopPropagation(); remove(budget.id)"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-950/60 text-xs font-semibold text-red-600 dark:text-red-400 cursor-pointer"
                   >
                     <lucide-icon [img]="Trash2" class="w-3.5 h-3.5"></lucide-icon>
@@ -168,6 +179,9 @@ export class BudgetListComponent {
   readonly ui = inject(UiStateService);
   readonly auth = inject(AuthService);
   private readonly obraService = inject(ObraService);
+  private readonly router = inject(Router);
+  readonly calculations = budgetCalculations;
+  readonly total = budgetTotal;
 
   searchTerm = signal('');
   statusFilter = signal('todos');
@@ -192,9 +206,16 @@ export class BudgetListComponent {
   readonly Lock = Lock;
   readonly LogIn = LogIn;
   readonly Search = Search;
-  readonly MapPin = MapPin;
   readonly Printer = Printer;
   readonly Trash2 = Trash2;
+
+  addCalculation(budget: SavedBudget): void {
+    void this.router.navigateByUrl('/calculo', { state: { budgetId: budget.id, calculationIndex: null } });
+  }
+
+  editCalculation(budget: SavedBudget, index: number): void {
+    void this.router.navigateByUrl('/calculo', { state: { budgetId: budget.id, calculationIndex: index } });
+  }
 
   async remove(id: string): Promise<void> {
     await this.obraService.deleteBudget(id);

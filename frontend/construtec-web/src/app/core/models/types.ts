@@ -56,6 +56,8 @@ export interface CalculationResult {
   priceDisclaimer: string;
   inputSummary: Record<string, string | number>;
   calculatedAt: string;
+  formValues?: Record<string, string | number | boolean>;
+  location?: RegionalLocation;
 }
 
 export interface RegionalLocation {
@@ -76,6 +78,7 @@ export interface SavedBudget {
   workType: WorkTypeKey;
   workTypeName: string;
   calculationResult: CalculationResult;
+  calculationResults?: CalculationResult[];
   status: 'rascunho' | 'aprovado' | 'em_andamento' | 'concluido';
   createdAt: string;
   updatedAt: string;

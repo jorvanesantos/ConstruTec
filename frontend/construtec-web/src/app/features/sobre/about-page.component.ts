@@ -90,30 +90,12 @@ import { UiStateService } from '../../core/services/ui-state.service';
 
         <div class="flex flex-wrap gap-3">
           <a
-            href="/api/docs/download-word?doc=ads"
+            href="/api/docs/download-word"
             download
             class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shadow-xs transition-colors"
           >
             <lucide-icon [img]="Download" class="w-4 h-4"></lucide-icon>
-            Baixar Guia de Fluxo & Arquitetura (.docx)
-          </a>
-
-          <a
-            href="/api/docs/download-word"
-            download
-            class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold text-xs border border-slate-200 dark:border-slate-700 transition-colors"
-          >
-            <lucide-icon [img]="Download" class="w-4 h-4 text-amber-500"></lucide-icon>
-            Baixar Especificação Completa (.docx)
-          </a>
-
-          <a
-            href="/api/docs/download-txt"
-            download
-            class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-bold text-xs border border-slate-200 dark:border-slate-700 transition-colors"
-          >
-            <lucide-icon [img]="FileText" class="w-4 h-4"></lucide-icon>
-            Baixar Especificação (.txt)
+            Baixar Documentação Completa (.md)
           </a>
 
           <button

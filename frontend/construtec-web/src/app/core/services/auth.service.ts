@@ -195,15 +195,15 @@ export class AuthService {
     }
   }
 
-  async loginWithGoogle(googleEmail?: string, googleName?: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+  async loginWithGoogle(idToken: string): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
+    if (!idToken) {
+      return { success: false, error: 'Não foi recebida uma credencial de login do Google.' };
+    }
+
     try {
-      const emailToUse = googleEmail || `usuario.google.${Date.now().toString().slice(-4)}@gmail.com`;
-      const nameToUse = googleName || 'Usuário Google';
       const data = await firstValueFrom(
         this.http.post<{ user: UserProfile; token: string }>('/api/auth/google', {
-          email: emailToUse,
-          name: nameToUse,
-          avatarUrl: `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(nameToUse)}`
+          idToken
         })
       );
       const userObj: UserProfile = {
@@ -238,15 +238,15 @@ export class AuthService {
 
   async requestPasswordRecovery(
     email: string
-  ): Promise<{ success: boolean; error?: string; message?: string; provisionalPassword?: string; emailSent?: boolean }> {
+  ): Promise<{ success: boolean; error?: string; message?: string }> {
     const cleanEmail = email.trim().toLowerCase();
     if (!this.isValidEmail(cleanEmail)) {
       return { success: false, error: 'Informe um e-mail válido.' };
     }
     try {
       const data = await firstValueFrom(
-        this.http.post<{ success: boolean; message: string; provisionalPassword?: string; emailSent?: boolean }>(
-          '/api/auth/solicitar-recuperacao',
+        this.http.post<{ success: boolean; message: string; emailSent?: boolean }>(
+          '/api/auth/esqueci-senha',
           {
             email: cleanEmail
           }
@@ -254,12 +254,10 @@ export class AuthService {
       );
       return {
         success: true,
-        message: data.message,
-        provisionalPassword: data.provisionalPassword,
-        emailSent: data.emailSent
+        message: data.message
       };
     } catch (err: any) {
-      return { success: false, error: err?.error?.error || 'Não foi possível localizar esta conta.' };
+      return { success: false, error: err?.error?.error || 'Não foi possível solicitar a redefinição de senha.' };
     }
   }
 
@@ -304,7 +302,7 @@ export class AuthService {
     );
   }
 
-  async resetPassword(email: string, code: string, newPassword: string): Promise<{ success: boolean; error?: string; message?: string }> {
+  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; error?: string; message?: string }> {
     const passCheck = this.validatePassword(newPassword);
     if (!passCheck.valid) {
       return { success: false, error: passCheck.message };
@@ -312,14 +310,13 @@ export class AuthService {
     try {
       const data = await firstValueFrom(
         this.http.post<{ success: boolean; message: string }>('/api/auth/redefinir-senha', {
-          email: email.trim().toLowerCase(),
-          code: code.trim(),
-          newPassword
+          token: token.trim(),
+          novaSenha: newPassword
         })
       );
       return { success: true, message: data.message };
     } catch (err: any) {
-      return { success: false, error: err?.error?.error || 'Código inválido ou erro ao redefinir.' };
+      return { success: false, error: err?.error?.error || 'Link inválido ou erro ao redefinir a senha.' };
     }
   }
 

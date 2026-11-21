@@ -88,6 +88,85 @@
 }
 
 @media print {
+  @layer base {
+    .dark .budget-print-overlay .budget-print-sheet,
+    .dark .budget-print-sheet .bg-white,
+    .dark .budget-print-sheet .bg-slate-50,
+    .dark .budget-print-sheet .bg-slate-100 {
+      background-color: white !important;
+    }
+
+    .dark .budget-print-sheet .card-print {
+      border-color: #e2e8f0 !important;
+    }
+
+    .dark .budget-print-sheet .print-total.card-print {
+      border-color: #d6ae6e !important;
+    }
+  }
+
+  body:has(.budget-print-sheet) app-root > div > :not(app-print-budget-modal) {
+    display: none !important;
+  }
+
+  body:has(.budget-print-sheet) app-root > div {
+    display: block !important;
+    min-height: 0 !important;
+    background: white !important;
+  }
+
+  .budget-print-overlay {
+    position: static !important;
+    padding: 0 !important;
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  .budget-print-overlay .budget-print-sheet {
+    max-width: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: white !important;
+  }
+
+  .budget-print-sheet.budget-print-sheet * {
+    color: black !important;
+    background-color: white !important;
+  }
+
+  .budget-print-sheet .print-brand,
+  .budget-print-sheet .print-section-title {
+    color: #075985 !important;
+  }
+
+  .budget-print-sheet .print-total strong {
+    color: #92400e !important;
+  }
+
+  .budget-print-sheet .print-badge,
+  .budget-print-sheet .print-total {
+    background-color: #fffbeb !important;
+    border-color: #d6ae6e !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .budget-print-sheet .print-badge {
+    color: #78350f !important;
+  }
+
+  .budget-print-sheet .print-table-header th {
+    color: #075985 !important;
+    background-color: #f0f9ff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .budget-print-sheet .overflow-x-auto {
+    overflow: visible !important;
+  }
+
   .no-print {
     display: none !important;
   }
@@ -106,5 +185,13 @@
     box-shadow: none !important;
     border: 1px solid #e2e8f0 !important;
     break-inside: avoid;
+  }
+
+  .budget-print-sheet .card-print {
+    border-color: #e2e8f0 !important;
+  }
+
+  .budget-print-sheet .print-total.card-print {
+    border-color: #d6ae6e !important;
   }
 }

@@ -70,14 +70,20 @@ export class ObraService {
   }
 
   async saveBudget(budget: SavedBudget): Promise<SavedBudget> {
-    try {
-      const saved = await firstValueFrom(this.http.post<SavedBudget>('/api/orcamentos', budget));
-      this.setBudgets([saved, ...this.budgets()]);
-      return saved;
-    } catch {
-      this.setBudgets([budget, ...this.budgets()]);
-      return budget;
-    }
+    const saved = await firstValueFrom(this.http.post<SavedBudget>('/api/orcamentos', budget));
+    this.setBudgets([saved, ...this.budgets()]);
+    return saved;
+  }
+
+  async updateBudget(budget: SavedBudget): Promise<SavedBudget> {
+    const saved = await firstValueFrom(this.http.put<SavedBudget>(`/api/orcamentos/${encodeURIComponent(budget.id)}`, {
+      title: budget.title,
+      clientName: budget.clientName,
+      status: budget.status,
+      calculationResults: budget.calculationResults || [budget.calculationResult]
+    }));
+    this.setBudgets(this.budgets().map(item => item.id === saved.id ? saved : item));
+    return saved;
   }
 
   async deleteBudget(id: string): Promise<void> {

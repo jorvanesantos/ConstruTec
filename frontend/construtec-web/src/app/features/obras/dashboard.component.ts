@@ -7,12 +7,12 @@ import {
   FolderOpen,
   LayoutDashboard,
   LucideAngularModule,
-  MapPin,
   Package
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
 import { ObraService } from '../../core/services/obra.service';
 import { UiStateService } from '../../core/services/ui-state.service';
+import { budgetTotal } from '../../core/models/budget-calculations';
 import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
 
 @Component({
@@ -48,7 +48,7 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
       </div>
 
       <!-- KPIs Reais -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
           <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Obras Salvas</span>
           <p class="text-3xl font-extrabold text-slate-900 dark:text-white mt-1">{{ totalBudgets() }}</p>
@@ -56,13 +56,6 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
         <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
           <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Orçado Acumulado</span>
           <p class="text-3xl font-extrabold text-amber-600 dark:text-amber-400 mt-1">{{ totalValue() | brl }}</p>
-        </div>
-        <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Tabela Regional Ativa</span>
-          <p class="text-lg font-bold text-slate-900 dark:text-white mt-1 flex items-center gap-1.5">
-            <lucide-icon [img]="MapPin" class="w-4 h-4 text-amber-500"></lucide-icon>
-            {{ ui.currentLocation().stateName }} ({{ ui.currentLocation().uf }})
-          </p>
         </div>
       </div>
 
@@ -91,17 +84,17 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
           } @else {
             <div class="space-y-3">
               @for (item of recentBudgets(); track item.id) {
-                <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-4">
+                <button type="button" (click)="ui.openPrintModal(item)" class="w-full text-left p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 hover:border-amber-500 flex items-center justify-between gap-4 cursor-pointer">
                   <div>
                     <p class="text-sm font-bold text-slate-900 dark:text-white">{{ item.title }}</p>
                     <p class="text-xs text-slate-500 dark:text-slate-400">
-                      {{ item.workTypeName }} · {{ item.location.uf }} · {{ item.createdAt | date: 'dd/MM/yyyy' }}
+                      {{ item.workTypeName }} · {{ item.createdAt | date: 'dd/MM/yyyy' }}
                     </p>
                   </div>
                   <span class="font-extrabold text-sm text-amber-600 dark:text-amber-400 shrink-0">
-                    {{ item.calculationResult.totalEstimatedCost | brl }}
+                    {{ budgetTotal(item) | brl }}
                   </span>
-                </div>
+                </button>
               }
             </div>
           }
@@ -159,14 +152,14 @@ export class DashboardComponent {
 
   readonly totalBudgets = computed(() => this.obraService.budgets().length);
   readonly totalValue = computed(() =>
-    this.obraService.budgets().reduce((sum, b) => sum + Number(b.calculationResult?.totalEstimatedCost || 0), 0)
+    this.obraService.budgets().reduce((sum, b) => sum + budgetTotal(b), 0)
   );
+  readonly budgetTotal = budgetTotal;
   readonly recentBudgets = computed(() => this.obraService.budgets().slice(0, 5));
 
   readonly ArrowLeft = ArrowLeft;
   readonly LayoutDashboard = LayoutDashboard;
   readonly Calculator = Calculator;
-  readonly MapPin = MapPin;
   readonly ArrowRight = ArrowRight;
   readonly Package = Package;
   readonly FolderOpen = FolderOpen;
