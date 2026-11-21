@@ -17,11 +17,13 @@ apiRouter.post('/conectar-banco', adminController.conectarBanco);
 // Autenticação & Perfil
 apiRouter.post('/auth/login', authController.login);
 apiRouter.post('/auth/register', authController.register);
+apiRouter.get('/auth/google/config', authController.googleClientConfig);
 apiRouter.post('/auth/google', authController.googleLogin);
 apiRouter.get('/auth/me', authenticateToken, authController.getMe);
 apiRouter.post('/auth/alterar-senha', authenticateToken, authController.changePassword);
 apiRouter.post('/auth/change-password', authenticateToken, authController.changePassword);
 apiRouter.post('/auth/avatar', authenticateToken, authController.updateAvatar);
+apiRouter.post('/auth/esqueci-senha', authController.requestPasswordRecovery);
 apiRouter.post('/auth/solicitar-recuperacao', authController.requestPasswordRecovery);
 apiRouter.post('/auth/redefinir-senha', authController.resetPassword);
 

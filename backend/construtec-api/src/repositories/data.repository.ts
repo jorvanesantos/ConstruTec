@@ -105,8 +105,6 @@ export const auditLogsStore: SystemAuditLog[] = [
 
 export const masterRequestsStore: MasterActionRequest[] = [];
 
-export const passwordResetStore = new Map<string, { code: string; expiresAt: number }>();
-
 export function sanitizeUser(user: AdminUser): AdminUser {
   const { passwordHash: _ph, password: _p, ...safe } = user;
   return safe;
@@ -277,6 +275,12 @@ export async function syncDataFromMySQL(): Promise<void> {
           // Ignora falha de parse JSON pontual
         }
 
+        const storedCalculations = Array.isArray(parsedCalc?.calculationResults) && parsedCalc.calculationResults.length
+          ? parsedCalc.calculationResults
+          : undefined;
+        if (storedCalculations && parsedCalc) {
+          delete parsedCalc.calculationResults;
+        }
         const createdAt = o.criado_em ? new Date(o.criado_em).toISOString() : new Date().toISOString();
         const budget: SavedBudget = {
           id: externalId,
@@ -304,6 +308,7 @@ export async function syncDataFromMySQL(): Promise<void> {
             inputSummary: {},
             calculatedAt: createdAt
           },
+          calculationResults: storedCalculations,
           status: o.status || 'rascunho',
           createdAt,
           updatedAt: createdAt

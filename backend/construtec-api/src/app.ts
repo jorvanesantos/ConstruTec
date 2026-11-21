@@ -22,7 +22,7 @@ export function createExpressApp() {
   app.use('/api', apiRouter);
 
   // Alias estático opcional para documentação técnica
-  const docsPath = path.resolve(process.cwd(), 'docs/requisitos');
+  const docsPath = path.resolve(process.cwd(), 'docs');
   app.use('/documentacao', express.static(docsPath));
 
   return app;
