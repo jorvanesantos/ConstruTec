@@ -83,19 +83,19 @@ import { UiStateService } from '../../core/services/ui-state.service';
               Documentação e Manuais Acadêmicos (ADS)
             </h2>
             <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Baixe os manuais completos explicando o fluxo de código, segurança JWT/bcryptjs, JSON e estrutura de pastas.
+              Consulte ou baixe o README com informações sobre o projeto, instalação, configuração e uso.
             </p>
           </div>
         </div>
 
         <div class="flex flex-wrap gap-3">
           <a
-            href="/api/docs/download-word"
+            href="/api/docs/download"
             download
             class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs shadow-xs transition-colors"
           >
             <lucide-icon [img]="Download" class="w-4 h-4"></lucide-icon>
-            Baixar Documentação Completa (.md)
+            Baixar README (.md)
           </a>
 
           <button
@@ -110,7 +110,7 @@ import { UiStateService } from '../../core/services/ui-state.service';
         @if (showSpec()) {
           <div class="mt-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Especificação Técnica ConstruTec</span>
+              <span class="text-xs font-bold text-slate-600 dark:text-slate-300">README ConstruTec</span>
               <button
                 type="button"
                 (click)="copySpec()"

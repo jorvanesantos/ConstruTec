@@ -59,7 +59,6 @@ construtec/
 │   ├── migrations/                # Scripts de estrutura do banco
 │   ├── seeds/                     # Dados iniciais
 │   └── scripts/                   # Scripts auxiliares de banco
-├── docs/                          # Documentação técnica e funcional
 ├── public/                        # Arquivos públicos e imagens
 ├── scripts/                       # Verificação de documentação e testes
 ├── index.html                     # Página inicial da aplicação
@@ -137,7 +136,7 @@ FRONTEND_URL=http://127.0.0.1:3000
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` | Configurações opcionais do servidor e remetente SMTP. Os padrões de host e porta são `smtp.gmail.com` e `587`. |
 | `DISABLE_HMR` | Com valor `true`, desativa o HMR e a observação de arquivos no Vite. |
 
-Não publique o `.env`, senhas, tokens ou chaves. A lista de opções e os detalhes da recuperação estão na [documentação completa](docs/DOCUMENTACAO_COMPLETA.md).
+Não publique o `.env`, senhas, tokens ou chaves. Consulte as opções acima e as instruções de recuperação de senha a seguir.
 
 ### Banco de dados
 
@@ -176,7 +175,7 @@ A URL base local é `http://127.0.0.1:3000/api`. Rotas protegidas utilizam `Auth
 | GET | `/materiais`, `/tipos-obras`, `/precos` | Consultar catálogo e preços de referência. |
 | GET | `/admin/stats`, `/admin/usuarios` | Consultar estatísticas e usuários administrativos. |
 
-A lista completa e as regras de acesso estão em [`api.routes.ts`](backend/construtec-api/src/routes/api.routes.ts) e na [documentação completa](docs/DOCUMENTACAO_COMPLETA.md).
+A lista completa e as regras de acesso estão em [`api.routes.ts`](backend/construtec-api/src/routes/api.routes.ts).
 
 ## Verificação e testes
 
@@ -186,10 +185,11 @@ Na raiz do projeto:
 npm run lint
 npm run build
 node --import tsx --test scripts\painting-ceiling.test.ts
+node --import tsx --test scripts\documentation.test.ts
 npm run docs
 ```
 
-`lint` verifica os tipos TypeScript; `build` compila a aplicação; o teste de pintura verifica teto e massa nos cálculos local e da API. `docs` apenas verifica a existência e o título da documentação consolidada, não os fluxos da aplicação.
+`lint` verifica os tipos TypeScript; `build` compila a aplicação; os testes verificam o cálculo de pintura e as rotas do README. `docs` apenas verifica a existência e o título do README, não os fluxos da aplicação.
 
 ## Solução de problemas
 
@@ -204,6 +204,6 @@ npm run docs
 ## Limitações e documentação complementar
 
 - A disponibilidade do banco, serviços externos e permissões do navegador afetam algumas funcionalidades.
-- Na criação de orçamento com vários cálculos, o custo inicial registrado na visão administrativa usa o cálculo principal; consulte a [documentação completa](docs/DOCUMENTACAO_COMPLETA.md) para detalhes de persistência e outras limitações.
+- Na criação de orçamento com vários cálculos, o custo inicial registrado na visão administrativa usa o cálculo principal. Na atualização, o custo salvo considera a soma dos cálculos.
 - As contas de demonstração e a chave JWT padrão não são apropriadas para implantação pública.
-- A documentação técnica detalhada, incluindo arquitetura, fluxos, banco, autenticação e API, está em [Documentação Completa](docs/DOCUMENTACAO_COMPLETA.md).
+- O README é a documentação principal do projeto e pode ser consultado ou baixado na página **Sobre**.

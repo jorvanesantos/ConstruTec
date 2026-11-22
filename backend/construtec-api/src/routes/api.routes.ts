@@ -51,8 +51,9 @@ apiRouter.get('/precos', catalogoController.getRegionalPrices);
 apiRouter.get('/regiao/detectar', catalogoController.detectRegion);
 
 // Documentação
-apiRouter.get('/docs/download-word', docsController.downloadWordDoc);
-apiRouter.get('/docs/download-txt', docsController.downloadTxtDoc);
+apiRouter.get('/docs/download', docsController.downloadReadme);
+apiRouter.get('/docs/download-word', docsController.downloadReadme);
+apiRouter.get('/docs/download-txt', docsController.downloadReadme);
 apiRouter.get('/docs/content', docsController.getDocContent);
 
 // Painel Administrativo (ADM + ADM_MASTER)

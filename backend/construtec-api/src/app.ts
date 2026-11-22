@@ -1,5 +1,4 @@
 import express from 'express';
-import path from 'path';
 import { apiRouter } from './routes/api.routes';
 
 export function createExpressApp() {
@@ -20,10 +19,6 @@ export function createExpressApp() {
   });
 
   app.use('/api', apiRouter);
-
-  // Alias estático opcional para documentação técnica
-  const docsPath = path.resolve(process.cwd(), 'docs');
-  app.use('/documentacao', express.static(docsPath));
 
   return app;
 }
