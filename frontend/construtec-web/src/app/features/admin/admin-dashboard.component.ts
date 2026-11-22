@@ -298,14 +298,20 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                    @if (users().length === 0) {
+                    @if (loading() && users().length === 0) {
                       <tr>
                         <td colspan="4" class="py-10 px-6 text-center text-sm text-slate-500 dark:text-slate-400">
-                          {{ loading() ? 'Carregando usuários cadastrados...' : 'Nenhum usuário encontrado.' }}
+                          Carregando usuários cadastrados...
                         </td>
                       </tr>
-                    }
-                    @for (u of users(); track u.id) {
+                    } @else {
+                    @for (group of userGroups(); track group.label) {
+                      <tr class="bg-slate-50 dark:bg-slate-800/60">
+                        <th scope="rowgroup" colspan="4" class="py-3 px-6 text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                          {{ group.label }} <span class="font-normal normal-case">({{ group.users.length }})</span>
+                        </th>
+                      </tr>
+                      @for (u of group.users; track u.id) {
                       <tr>
                         <td class="py-3.5 px-6">
                           <p class="font-bold text-slate-900 dark:text-white">{{ u.name }}</p>
@@ -369,6 +375,14 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
                           }
                         </td>
                       </tr>
+                      } @empty {
+                        <tr>
+                          <td colspan="4" class="py-4 px-6 text-sm text-slate-500 dark:text-slate-400">
+                            {{ group.emptyMessage }}
+                          </td>
+                        </tr>
+                      }
+                    }
                     }
                   </tbody>
                 </table>
@@ -952,6 +966,21 @@ export class AdminDashboardComponent implements OnInit {
   readonly stats = signal<AdminDashboardStats | null>(null);
   readonly dbStatus = signal<DbStatusResponse | null>(null);
   readonly users = signal<AdminUser[]>([]);
+  readonly userGroups = computed(() => {
+    const users = this.users();
+    return [
+      {
+        label: 'Administradores',
+        users: users.filter(user => user.userType !== 'USUARIO'),
+        emptyMessage: 'Nenhum administrador cadastrado.'
+      },
+      {
+        label: 'Usuários',
+        users: users.filter(user => user.userType === 'USUARIO'),
+        emptyMessage: 'Nenhum usuário cadastrado.'
+      }
+    ];
+  });
   readonly masterRequests = signal<MasterActionRequest[]>([]);
   readonly workTypes = signal<AdminWorkType[]>([]);
   readonly materials = signal<AdminMaterial[]>([]);

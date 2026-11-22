@@ -352,11 +352,12 @@ export class CalculationService {
     const grossWallsArea = wallLength * height * wallsCount;
     const doorsArea = (Number(params.doorsCount) || 0) * (Number(params.doorWidth) || 0.8) * (Number(params.doorHeight) || 2.1);
     const windowsArea = (Number(params.windowsCount) || 0) * (Number(params.windowWidth) || 1.2) * (Number(params.windowHeight) || 1.0);
-    let netArea = Math.max(0.1, grossWallsArea - (doorsArea + windowsArea));
-
-    if (params.includeCeiling && params.ceilingArea) {
-      netArea += Number(params.ceilingArea) || 0;
+    const wallsArea = Math.max(0.1, grossWallsArea - (doorsArea + windowsArea));
+    const ceilingArea = params.includeCeiling ? Number(params.ceilingArea) : 0;
+    if (params.includeCeiling && (!Number.isFinite(ceilingArea) || ceilingArea <= 0)) {
+      throw new Error('Informe uma área do teto maior que zero.');
     }
+    const netArea = wallsArea + ceilingArea;
 
     const wasteMultiplier = 1 + waste / 100;
     const materials: MaterialItem[] = [];
@@ -411,7 +412,9 @@ export class CalculationService {
       wasteCost,
       totalEstimatedCost: subtotal,
       formulasUsed: [
-        `Área Líquida: ${netArea.toFixed(2)} m² (${wallsCount} parede(s) - aberturas)`,
+        ceilingArea > 0
+          ? `Área Líquida: ${wallsArea.toFixed(2)} m² de paredes + ${ceilingArea.toFixed(2)} m² de teto = ${netArea.toFixed(2)} m²`
+          : `Área Líquida: ${netArea.toFixed(2)} m² (${wallsCount} parede(s) - aberturas)`,
         `Área Total com ${coats} Demãos (+${waste}% perda): ${totalPaintedArea.toFixed(2)} m²`,
         `Volume de Tinta: ${totalPaintedArea.toFixed(2)} m² ÷ ${yieldPerLiter} m²/L = ${litersRequired.toFixed(1)} L → ${cans18L} lata(s) de 18L`,
         needsPutty ? `Massa Corrida: ${Math.max(1, Math.ceil(netArea * 1.1 * wasteMultiplier / 25))} barrica(s) de 25 kg` : 'Sem massa corrida inclusa'
@@ -428,6 +431,7 @@ export class CalculationService {
         'Altura': `${height} m`,
         'Qtd Paredes': `${wallsCount}`,
         'Demãos': `${coats}`,
+        ...(ceilingArea > 0 ? { 'Área do teto': `${ceilingArea} m²` } : {}),
         'Selador': needsSealer ? 'Sim' : 'Não',
         'Massa Corrida': needsPutty ? 'Sim' : 'Não'
       },

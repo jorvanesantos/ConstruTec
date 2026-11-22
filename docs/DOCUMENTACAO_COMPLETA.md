@@ -26,10 +26,10 @@ Essa é uma visão geral, não uma sequência obrigatória para todas as requisi
 ### Inicialização passo a passo
 
 1. Na raiz, `npm run dev` executa [`server.ts`](../server.ts), que cria o Express por meio de [`app.ts`](../backend/construtec-api/src/app.ts), tenta conectar ao banco e, se conectado, chama a sincronização do repositório.
-2. Em desenvolvimento, o Vite funciona como middleware do Express. Em produção, `npm run build` gera `dist` e `npm start` executa o servidor compilado, que serve a interface e mantém `/api`. O servidor full-stack escuta na **porta 3000**, inclusive em `0.0.0.0`; isso não publica a aplicação na internet por si só.
+2. Em desenvolvimento, o Vite funciona como middleware do Express. O servidor usa a porta 3000 em `127.0.0.1`, acessível apenas no próprio computador. Em produção, `npm run build` gera `dist` e `npm start` executa o servidor compilado, que serve a interface e mantém `/api` na porta 3000 em `0.0.0.0`; isso não publica a aplicação na internet por si só.
 3. [`index.html`](../index.html) fornece o documento inicial; [`main.ts`](../frontend/construtec-web/src/main.ts) inicia o Angular. [`app.config.ts`](../frontend/construtec-web/src/app/app.config.ts) registra roteador e interceptor; [`app.routes.ts`](../frontend/construtec-web/src/app/app.routes.ts) mapeia URLs para componentes.
 4. [`app.component.ts`](../frontend/construtec-web/src/app/app.component.ts) monta cabeçalho, menu, rodapé, páginas e modais globais. Inicializa a detecção de região; se houver sessão restaurada, tenta validá-la e carregar orçamentos.
-5. A inicialização da API standalone em [`backend/construtec-api/src/server.ts`](../backend/construtec-api/src/server.ts) é separada e aceita `PORT`; não confundir com a porta fixa do servidor full-stack da raiz.
+5. A inicialização da API standalone em [`backend/construtec-api/src/server.ts`](../backend/construtec-api/src/server.ts) é separada e aceita `PORT`; não confundir com o servidor full-stack da raiz.
 
 ### Banco e sincronização
 
@@ -126,6 +126,8 @@ Se a chamada remota falhar com 401 ou 403, a calculadora trata a sessão como ex
 
 Os tipos suportados são `muro`, `parede`, `piso`, `pintura`, `concreto`, `fundacao`, `telhado`, `revestimento` e `outro`. As opções específicas, como selador e massa para pintura ou madeiramento para telhado, dependem do formulário e das regras de cada motor. Consulte os serviços de cálculo para os coeficientes e materiais efetivamente utilizados.
 
+Em pintura, a opção **Incluir pintura do teto** solicita a área do teto em m² (comprimento × largura). Essa área é somada à área das paredes para calcular tinta e, quando selecionados, selador e massa corrida. A opção e a área são guardadas nos parâmetros do cálculo para edição posterior.
+
 ### Vários cálculos no mesmo orçamento
 
 1. O usuário calcula, pode adicionar outro cálculo e manter resultados pendentes no componente. Pendências não salvas estão em memória da página; ao sair, existe aviso de confirmação, mas isso não substitui salvar.
@@ -207,7 +209,7 @@ npm install
 npm run dev
 ```
 
-Abra `http://localhost:3000`. Para gerar e executar produção local: `npm run build` e `npm start`. `npm run lint` executa `tsc --noEmit`; `npm run docs` verifica a existência e o título deste arquivo, não testa os fluxos. No Windows, caso a execução de scripts do PowerShell esteja bloqueada, use `npm.cmd`.
+Abra `http://127.0.0.1:3000` após iniciar o servidor. Se a porta 3000 estiver ocupada, pare o outro servidor antes de iniciar o ConstruTec. Para gerar e executar produção local: `npm run build` e `npm start`. `npm run lint` executa `tsc --noEmit`; `npm run docs` verifica a existência e o título deste arquivo, não testa os fluxos. No Windows, caso a execução de scripts do PowerShell esteja bloqueada, use `npm.cmd`.
 
 As configurações incluem `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `EMAIL_USER`, `EMAIL_PASS` e `FRONTEND_URL`, além das opções SMTP mencionadas na seção 4. Configure valores reais apenas no ambiente apropriado; nunca compartilhe ou versione `.env`, senhas, tokens ou segredos. Para Gmail, preencha `EMAIL_USER` e `EMAIL_PASS` no `.env` com seu endereço e uma senha de aplicativo; `FRONTEND_URL` deve ser a origem real usada para abrir o link, por exemplo `http://localhost:3000` na execução full-stack local. Em outro dispositivo, `localhost` aponta para o próprio dispositivo, não para o computador do servidor.
 

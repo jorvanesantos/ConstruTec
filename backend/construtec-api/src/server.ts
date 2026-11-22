@@ -1,9 +1,7 @@
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import { createExpressApp } from './app';
 import { connectDatabase } from './config/database';
 import { syncDataFromMySQL } from './repositories/data.repository';
-
-dotenv.config();
 
 export async function bootstrapBackend(port = Number(process.env.PORT || 3000)) {
   const app = createExpressApp();

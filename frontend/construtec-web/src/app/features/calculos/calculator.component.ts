@@ -303,7 +303,18 @@ interface PendingCalculation {
                     <input type="checkbox" [(ngModel)]="needsPutty" name="ptPutty" class="w-4 h-4 rounded accent-amber-500" />
                     Incluir Massa Corrida / Nivelamento
                   </label>
+                  <label class="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+                    <input type="checkbox" [(ngModel)]="includeCeiling" name="ptCeiling" class="w-4 h-4 rounded accent-amber-500" />
+                    Incluir teto
+                  </label>
                 </div>
+                @if (includeCeiling) {
+                  <div class="max-w-xs">
+                    <label for="ptCeilingArea" class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Área do teto (m²)</label>
+                    <input id="ptCeilingArea" type="number" step="any" min="0.01" [(ngModel)]="ceilingArea" name="ptCeilingArea" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-sm" />
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Informe o comprimento multiplicado pela largura do teto.</p>
+                  </div>
+                }
               }
 
               @case ('concreto') {
@@ -704,6 +715,8 @@ export class CalculatorComponent implements OnInit {
   coats = 2;
   needsSealer = true;
   needsPutty = false;
+  includeCeiling = false;
+  ceilingArea = 0;
   mixRatio: '1_2_3' | '1_2.5_3.5' | '1_3_4' = '1_2_3';
   foundationType: 'baldrame' | 'sapata_isolada' | 'estaca_broca' = 'baldrame';
   roofSlope = 30;
@@ -796,7 +809,8 @@ export class CalculatorComponent implements OnInit {
       length: this.length, height: this.height, width: this.width, depth: this.depth,
       blockType: this.blockType, renderType: this.renderType, tileType: this.tileType,
       tileSizeCm: this.tileSizeCm, wallsCount: this.wallsCount, coats: this.coats,
-      needsSealer: this.needsSealer, needsPutty: this.needsPutty, mixRatio: this.mixRatio,
+      needsSealer: this.needsSealer, needsPutty: this.needsPutty,
+      includeCeiling: this.includeCeiling, ceilingArea: this.ceilingArea, mixRatio: this.mixRatio,
       foundationType: this.foundationType, roofSlope: this.roofSlope, roofTileType: this.roofTileType,
       includeWoodwork: this.includeWoodwork, doorsCount: this.doorsCount, doorWidth: this.doorWidth,
       doorHeight: this.doorHeight, windowsCount: this.windowsCount, windowWidth: this.windowWidth,
@@ -807,6 +821,8 @@ export class CalculatorComponent implements OnInit {
   }
 
   private restoreFormValues(values: Record<string, string | number | boolean>): void {
+    this.includeCeiling = false;
+    this.ceilingArea = 0;
     const defaults = this.getFormValues();
     const validValues: Record<string, string | number | boolean> = {};
     for (const key of Object.keys(defaults)) {
@@ -856,6 +872,10 @@ export class CalculatorComponent implements OnInit {
     }
 
     const type = this.selectedType();
+    if (type === 'pintura' && this.includeCeiling && (!Number.isFinite(this.ceilingArea) || this.ceilingArea <= 0)) {
+      this.errorMessage.set('Informe uma área do teto maior que zero.');
+      return;
+    }
     const payload = {
       length: this.length,
       wallLength: this.length,
@@ -873,6 +893,8 @@ export class CalculatorComponent implements OnInit {
       coats: this.coats,
       needsSealer: this.needsSealer,
       needsPutty: this.needsPutty,
+      includeCeiling: type === 'pintura' && this.includeCeiling,
+      ceilingArea: this.ceilingArea,
       mixRatio: this.mixRatio,
       foundationType: this.foundationType,
       slopePercentage: this.roofSlope,
