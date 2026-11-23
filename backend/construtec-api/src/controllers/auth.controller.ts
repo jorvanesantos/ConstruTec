@@ -24,6 +24,15 @@ interface PasswordResetUserRow extends RowDataPacket {
   ativo?: number;
 }
 
+function normalizeResetToken(value: unknown): string {
+  const token = sanitizeString(value);
+  return /^[a-f0-9]{24}$/i.test(token) ? token.toUpperCase() : token;
+}
+
+function isValidResetToken(token: string): boolean {
+  return /^[A-F0-9]{24}$/.test(token) || /^[a-f0-9]{64}$/i.test(token);
+}
+
 interface GoogleUserRow extends RowDataPacket {
   id: number;
   nome: string;
@@ -38,6 +47,34 @@ interface GoogleUserRow extends RowDataPacket {
   ativo: number;
   criado_em: Date | string;
 }
+
+function userFromDatabase(row: GoogleUserRow, fallbackAvatar = ''): AdminUser {
+  return {
+    id: String(row.id),
+    name: row.nome,
+    email: row.email,
+    userType: row.tipo_usuario || 'USUARIO',
+    role: row.perfil || 'cliente',
+    active: Boolean(row.ativo),
+    createdAt: row.criado_em ? new Date(row.criado_em).toISOString() : new Date().toISOString(),
+    avatarUrl: row.avatar_url || fallbackAvatar || undefined,
+    phone: row.telefone || undefined,
+    city: row.cidade_padrao || 'São Paulo',
+    uf: row.uf_padrao || 'SP',
+    passwordHash: row.senha_hash || undefined
+  };
+}
+
+function syncUser(user: AdminUser): void {
+  const index = usersStore.findIndex(candidate => candidate.email.toLowerCase() === user.email.toLowerCase());
+  if (index >= 0) usersStore[index] = user;
+  else usersStore.unshift(user);
+}
+
+const userByEmailQuery = `SELECT id, nome, email, senha_hash, avatar_url, perfil, tipo_usuario, telefone,
+                                uf_padrao, cidade_padrao, ativo, criado_em
+                         FROM usuario WHERE email = ? LIMIT 1`;
+const databaseUnavailableMessage = 'Banco de dados indisponível. Tente novamente mais tarde.';
 
 async function persistPasswordHash(email: string, passwordHash: string, res: Response): Promise<boolean> {
   const dbPool = getDbPool();
@@ -103,7 +140,21 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const user = usersStore.find(u => u.email.toLowerCase() === email);
+    const dbPool = getDbPool();
+    if (!getDbState().connected || !dbPool) {
+      res.status(503).json({ error: databaseUnavailableMessage });
+      return;
+    }
+
+    let rows: GoogleUserRow[];
+    try {
+      [rows] = await dbPool.execute<GoogleUserRow[]>(userByEmailQuery, [email]);
+    } catch (err) {
+      console.error('[Auth] Falha ao consultar usuário para login:', err);
+      res.status(503).json({ error: databaseUnavailableMessage });
+      return;
+    }
+    const user = rows[0] ? userFromDatabase(rows[0]) : undefined;
     if (!user) {
       await recordAuditLog('LOGIN_FALHA', `Tentativa de login com e-mail não cadastrado: ${email}`, { name: email, email, userType: 'USUARIO' }, req.ip);
       res.status(401).json({ error: 'E-mail ou senha incorretos.' });
@@ -122,6 +173,7 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    syncUser(user);
     await recordAuditLog('LOGIN', `Login realizado com sucesso por ${user.name} (${user.userType})`, { id: user.id, name: user.name, email: user.email, userType: user.userType }, req.ip);
     res.json(buildUserResponse(user));
   } catch (err: any) {
@@ -152,29 +204,28 @@ export async function register(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    if (usersStore.some(u => u.email.toLowerCase() === email)) {
-      res.status(409).json({ error: 'Este e-mail já está cadastrado. Faça login ou recupere sua senha.' });
+    const dbPool = getDbPool();
+    if (!getDbState().connected || !dbPool) {
+      res.status(503).json({ error: databaseUnavailableMessage });
       return;
     }
-
     const pwHash = hashPassword(password);
-    let userId = `usr_${Date.now()}`;
-
-    const dbPool = getDbPool();
-    const dbState = getDbState();
-    if (dbState.connected && dbPool) {
-      try {
-        const [result]: any = await dbPool.query(
-          `INSERT INTO usuario (nome, email, senha_hash, perfil, tipo_usuario, telefone, uf_padrao, cidade_padrao, ativo)
-           VALUES (?, ?, ?, ?, 'USUARIO', ?, ?, ?, 1)`,
-          [name, email, pwHash, role, phone || null, uf, city]
-        );
-        if (result?.insertId) {
-          userId = String(result.insertId);
-        }
-      } catch (err: any) {
-        console.warn('[MySQL] Erro ao inserir novo usuário:', err.message);
+    let userId: string;
+    try {
+      const [result] = await dbPool.execute<ResultSetHeader>(
+        `INSERT INTO usuario (nome, email, senha_hash, perfil, tipo_usuario, telefone, uf_padrao, cidade_padrao, ativo)
+         VALUES (?, ?, ?, ?, 'USUARIO', ?, ?, ?, 1)`,
+        [name, email, pwHash, role, phone || null, uf, city]
+      );
+      userId = String(result.insertId);
+    } catch (err: any) {
+      if (err?.code === 'ER_DUP_ENTRY') {
+        res.status(409).json({ error: 'Este e-mail já está cadastrado. Faça login ou recupere sua senha.' });
+        return;
       }
+      console.error('[Auth] Falha ao cadastrar usuário no banco:', err);
+      res.status(503).json({ error: 'Não foi possível salvar o cadastro. Tente novamente mais tarde.' });
+      return;
     }
 
     const newUser: AdminUser = {
@@ -191,7 +242,7 @@ export async function register(req: Request, res: Response): Promise<void> {
       passwordHash: pwHash
     };
 
-    usersStore.unshift(newUser);
+    syncUser(newUser);
     await recordAuditLog('CADASTRAR_USUARIO', `Novo cadastro público realizado: ${name} (${email})`, { id: newUser.id, name, email, userType: 'USUARIO' }, req.ip);
 
     res.status(201).json(buildUserResponse(newUser));
@@ -217,6 +268,12 @@ export async function googleLogin(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    const dbPool = getDbPool();
+    if (!getDbState().connected || !dbPool) {
+      res.status(503).json({ error: databaseUnavailableMessage });
+      return;
+    }
+
     let payload;
     try {
       const ticket = await new OAuth2Client(clientId).verifyIdToken({ idToken, audience: clientId });
@@ -235,37 +292,21 @@ export async function googleLogin(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const dbPool = getDbPool();
-    const userRow = getDbState().connected && dbPool
-      ? (await dbPool.execute<GoogleUserRow[]>(
-          `SELECT id, nome, email, senha_hash, avatar_url, perfil, tipo_usuario, telefone,
-                  uf_padrao, cidade_padrao, ativo, criado_em
-           FROM usuario WHERE email = ? LIMIT 1`,
-          [email]
-        ))[0][0]
-      : undefined;
+    let userRow: GoogleUserRow | undefined;
+    try {
+      [userRow] = (await dbPool.execute<GoogleUserRow[]>(userByEmailQuery, [email]))[0];
+    } catch (err) {
+      console.error('[Auth] Falha ao consultar usuário Google:', err);
+      res.status(503).json({ error: databaseUnavailableMessage });
+      return;
+    }
 
-    let user = userRow
-      ? {
-          id: String(userRow.id),
-          name: userRow.nome,
-          email: userRow.email,
-          userType: userRow.tipo_usuario || 'USUARIO',
-          role: userRow.perfil || 'cliente',
-          active: Boolean(userRow.ativo),
-          createdAt: userRow.criado_em ? new Date(userRow.criado_em).toISOString() : new Date().toISOString(),
-          avatarUrl: userRow.avatar_url || avatarUrl || undefined,
-          phone: userRow.telefone || undefined,
-          city: userRow.cidade_padrao || 'São Paulo',
-          uf: userRow.uf_padrao || 'SP',
-          passwordHash: userRow.senha_hash || undefined
-        } satisfies AdminUser
-      : usersStore.find(candidate => candidate.email.toLowerCase() === email);
+    let user = userRow ? userFromDatabase(userRow, avatarUrl) : undefined;
 
     if (!user) {
       const createdAt = new Date();
-      let userId = `usr_g_${Date.now()}`;
-      if (getDbState().connected && dbPool) {
+      let userId: string;
+      try {
         const [result] = await dbPool.execute<ResultSetHeader>(
           `INSERT INTO usuario
              (nome, email, senha_hash, avatar_url, perfil, tipo_usuario, uf_padrao, cidade_padrao, ativo)
@@ -273,6 +314,10 @@ export async function googleLogin(req: Request, res: Response): Promise<void> {
           [name, email, avatarUrl || null]
         );
         userId = String(result.insertId);
+      } catch (err) {
+        console.error('[Auth] Falha ao cadastrar usuário Google:', err);
+        res.status(503).json({ error: 'Não foi possível salvar o cadastro. Tente novamente mais tarde.' });
+        return;
       }
 
       user = {
@@ -288,14 +333,6 @@ export async function googleLogin(req: Request, res: Response): Promise<void> {
         uf: 'SP',
         passwordHash: undefined
       };
-      usersStore.unshift(user);
-    } else {
-      const index = usersStore.findIndex(candidate => candidate.email.toLowerCase() === email);
-      if (index >= 0) {
-        usersStore[index] = user;
-      } else {
-        usersStore.unshift(user);
-      }
     }
 
     if (!user.active) {
@@ -303,6 +340,7 @@ export async function googleLogin(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    syncUser(user);
     await recordAuditLog('LOGIN', `Login via Google para ${user.name} (${user.email})`, { id: user.id, name: user.name, email: user.email, userType: user.userType }, req.ip);
     res.json(buildUserResponse(user));
   } catch (err: any) {
@@ -311,16 +349,34 @@ export async function googleLogin(req: Request, res: Response): Promise<void> {
   }
 }
 
-export function getMe(req: AuthenticatedRequest, res: Response): void {
+export async function getMe(req: AuthenticatedRequest, res: Response): Promise<void> {
   if (!req.user) {
     res.status(401).json({ error: 'Não autenticado.' });
     return;
   }
-  const found = usersStore.find(u => u.id === req.user!.id || u.email.toLowerCase() === req.user!.email.toLowerCase());
-  if (!found) {
+  const dbPool = getDbPool();
+  if (!getDbState().connected || !dbPool) {
+    res.status(503).json({ error: databaseUnavailableMessage });
+    return;
+  }
+  let rows: GoogleUserRow[];
+  try {
+    [rows] = await dbPool.execute<GoogleUserRow[]>(userByEmailQuery, [req.user.email]);
+  } catch (err) {
+    console.error('[Auth] Falha ao verificar sessão:', err);
+    res.status(503).json({ error: databaseUnavailableMessage });
+    return;
+  }
+  if (!rows[0] || String(rows[0].id) !== req.user.id) {
     res.status(404).json({ error: 'Usuário não encontrado.' });
     return;
   }
+  const found = userFromDatabase(rows[0]);
+  if (!found.active) {
+    res.status(403).json({ error: 'Esta conta foi desativada.' });
+    return;
+  }
+  syncUser(found);
   const pendingMasterRequestsCount = masterRequestsStore.filter(
     r => r.targetUserId === found.id && r.status === 'PENDENTE'
   ).length;
@@ -441,12 +497,12 @@ export async function requestPasswordRecovery(req: Request, res: Response): Prom
     if (!user || user.ativo === 0) {
       res.json({
         success: true,
-        message: 'Se o e-mail estiver cadastrado, enviaremos um link para redefinir sua senha.'
+        message: 'Se o e-mail estiver cadastrado, enviaremos um código para redefinir sua senha.'
       });
       return;
     }
 
-    const token = randomBytes(32).toString('hex');
+    const token = randomBytes(12).toString('hex').toUpperCase();
     const tokenHash = createHash('sha256').update(token).digest('hex');
     const [tokenUpdate] = await dbPool.execute<ResultSetHeader>(
       `UPDATE usuario
@@ -457,7 +513,7 @@ export async function requestPasswordRecovery(req: Request, res: Response): Prom
     if (tokenUpdate.affectedRows === 0) {
       res.json({
         success: true,
-        message: 'Se o e-mail estiver cadastrado, enviaremos um link para redefinir sua senha.'
+        message: 'Se o e-mail estiver cadastrado, enviaremos um código para redefinir sua senha.'
       });
       return;
     }
@@ -480,14 +536,14 @@ export async function requestPasswordRecovery(req: Request, res: Response): Prom
 
     await recordAuditLog(
       'RECUPERAR_SENHA',
-      `Link de redefinição de senha enviado para ${email}`,
+      `Código de redefinição de senha enviado para ${email}`,
       { id: String(user.id), name: user.nome, email: user.email, userType: user.tipo_usuario as AdminUser['userType'] },
       req.ip
     );
 
     res.json({
       success: true,
-      message: 'Se o e-mail estiver cadastrado, enviaremos um link para redefinir sua senha.'
+      message: 'Se o e-mail estiver cadastrado, enviaremos um código para redefinir sua senha.'
     });
   } catch (err) {
     console.error('[Auth] Erro ao solicitar recuperação de senha:', err);
@@ -495,13 +551,45 @@ export async function requestPasswordRecovery(req: Request, res: Response): Prom
   }
 }
 
+export async function verifyPasswordRecoveryCode(req: Request, res: Response): Promise<void> {
+  try {
+    const token = normalizeResetToken(req.body?.token);
+    if (!isValidResetToken(token)) {
+      res.status(400).json({ error: 'O código é inválido ou expirou. Solicite um novo código.' });
+      return;
+    }
+
+    const dbPool = getDbPool();
+    if (!getDbState().connected || !dbPool) {
+      res.status(503).json({ error: 'Banco de dados indisponível. Tente novamente mais tarde.' });
+      return;
+    }
+
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const [rows] = await dbPool.execute<PasswordResetUserRow[]>(
+      `SELECT id FROM usuario
+       WHERE reset_token = ? AND reset_token_expira > NOW() AND ativo = 1
+       LIMIT 1`,
+      [tokenHash]
+    );
+    if (!rows[0]) {
+      res.status(400).json({ error: 'O código é inválido ou expirou. Solicite um novo código.' });
+      return;
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Auth] Erro ao verificar código de recuperação:', err);
+    res.status(503).json({ error: 'Não foi possível verificar o código. Tente novamente mais tarde.' });
+  }
+}
+
 export async function resetPassword(req: Request, res: Response): Promise<void> {
   try {
-    const token = sanitizeString(req.body?.token);
+    const token = normalizeResetToken(req.body?.token);
     const newPassword = String(req.body?.novaSenha || '');
 
-    if (!/^[a-f0-9]{64}$/i.test(token) || !isValidPassword(newPassword)) {
-      res.status(400).json({ error: 'Token inválido ou nova senha menor que 6 caracteres.' });
+    if (!isValidResetToken(token) || !isValidPassword(newPassword)) {
+      res.status(400).json({ error: 'Código inválido ou nova senha menor que 6 caracteres.' });
       return;
     }
 
@@ -514,13 +602,13 @@ export async function resetPassword(req: Request, res: Response): Promise<void> 
     const tokenHash = createHash('sha256').update(token).digest('hex');
     const [rows] = await dbPool.execute<PasswordResetUserRow[]>(
       `SELECT id, nome, email, tipo_usuario FROM usuario
-       WHERE reset_token = ? AND reset_token_expira > NOW()
+       WHERE reset_token = ? AND reset_token_expira > NOW() AND ativo = 1
        LIMIT 1`,
       [tokenHash]
     );
     const user = rows[0];
     if (!user) {
-      res.status(400).json({ error: 'O link de redefinição é inválido ou expirou. Solicite um novo link.' });
+      res.status(400).json({ error: 'O código ou link é inválido ou expirou. Solicite uma nova recuperação.' });
       return;
     }
 
@@ -528,11 +616,11 @@ export async function resetPassword(req: Request, res: Response): Promise<void> 
     const [result] = await dbPool.execute<ResultSetHeader>(
       `UPDATE usuario
        SET senha_hash = ?, reset_token = NULL, reset_token_expira = NULL
-       WHERE id = ? AND reset_token = ? AND reset_token_expira > NOW()`,
+       WHERE id = ? AND reset_token = ? AND reset_token_expira > NOW() AND ativo = 1`,
       [newHash, user.id, tokenHash]
     );
     if (result.affectedRows === 0) {
-      res.status(400).json({ error: 'O link de redefinição é inválido ou expirou. Solicite um novo link.' });
+      res.status(400).json({ error: 'O código ou link é inválido ou expirou. Solicite uma nova recuperação.' });
       return;
     }
 

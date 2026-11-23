@@ -19,7 +19,11 @@ O ConstruTec é uma aplicação web para estimar quantitativos de materiais e cu
 - Painel administrativo com gestão de usuários, materiais, tipos de obra, histórico e solicitações relacionadas a administradores master.
 - Interface responsiva com tema claro e escuro.
 
-Os preços são valores de referência com multiplicadores regionais; **não representam uma consulta oficial em tempo real ao SINAPI**.
+Alguns materiais usam preços SINAPI por UF e mês, obtidos dos relatórios oficiais da CAIXA; os demais usam estimativas não oficiais com multiplicadores regionais. Cada item informa sua origem. Não há consulta oficial em tempo real nem garantia de que o preço inclua frete.
+
+A API verifica o último relatório ao iniciar e a cada 24 horas enquanto estiver ligada. Caso não haja publicação nova ou ocorra falha, conserva a última importação; a competência é mostrada no item. Os preços são gravados por UF e competência na tabela `sinapi_preco`. A importação cobre os insumos mapeados em `SINAPI_MATERIALS`, não todo o catálogo SINAPI. Antes de iniciar uma instalação nova ou atualizar uma instalação existente, execute a manutenção administrativa descrita em [Banco de dados](#banco-de-dados). Para verificar apenas a conectividade à fonte oficial, use `npm run sinapi:verificar`.
+
+O preço do cimento CP II publicado por kg é multiplicado por 50 para o saco de 50 kg; argamassas e cal por 20 para sacos de 20 kg, tinta e selador por 18 para latas de 18 litros, massa por 25 para barrica de 25 kg, e a telha de fibrocimento por 2,44 × 1,10 para obter o preço da placa. Confira sempre a descrição oficial associada, a unidade, a competência e o dimensionamento da obra antes de comprar.
 
 ## Tecnologias
 
@@ -47,7 +51,11 @@ Servidor Node.js/Express
         +-- Vite em desenvolvimento ou arquivos compilados em produção
 ```
 
-O mesmo servidor disponibiliza a interface e a API na porta 3000. O cálculo é feito pela API; em determinadas falhas de comunicação, a interface também possui um cálculo local de contingência. Alguns dados são mantidos em memória e podem ser sincronizados com o MySQL.
+O mesmo servidor disponibiliza a interface e a API na porta 3000. Os cálculos, os preços, as regiões e os tipos de obra apresentados na calculadora são obtidos pela API; se a conexão falhar, a interface informa o erro e não gera uma estimativa local. Alguns dados são mantidos em memória e podem ser sincronizados com o MySQL.
+
+Novos cálculos são assinados pela API e vinculados à conta, para detectar alterações nos valores antes de salvar o orçamento. Os parâmetros de edição e a localização anexados pela interface não são cobertos pela assinatura. Cálculos antigos já salvos continuam disponíveis para edição sem alteração; para modificar um cálculo antigo, recalcule-o. Se `JWT_SECRET` mudar, cálculos ainda não salvos precisam ser refeitos.
+
+As fórmulas de materiais e os totais gravados no banco são calculados pela API. A soma exibida para vários cálculos e o total acumulado do painel ainda são calculados no navegador; não são usados para definir o valor gravado no banco.
 
 ## Estrutura do projeto
 
@@ -122,7 +130,6 @@ DB_NAME=construtec_db
 DB_USER=seu_usuario_mysql
 DB_PASSWORD=sua_senha_mysql
 JWT_SECRET=defina_uma_chave_longa_e_aleatoria
-FRONTEND_URL=http://127.0.0.1:3000
 ```
 
 | Variável | Finalidade |
@@ -130,7 +137,6 @@ FRONTEND_URL=http://127.0.0.1:3000
 | `DB_HOST`, `DB_PORT`, `DB_NAME` | Endereço, porta e nome do banco MySQL. Os padrões são `localhost`, `3306` e `construtec_db`. |
 | `DB_USER`, `DB_PASSWORD` | Credenciais do MySQL; por padrão o usuário é `root` e a senha é vazia. Ajuste conforme sua instalação. |
 | `JWT_SECRET` | Chave de assinatura dos tokens. Defina uma chave forte e exclusiva; o valor padrão do código é apenas para desenvolvimento. |
-| `FRONTEND_URL` | Origem usada nos links de recuperação de senha. Configure com o endereço real da interface; sem configuração, o serviço usa `http://localhost:4200`. |
 | `GOOGLE_CLIENT_ID` | Client ID OAuth Web, necessário somente para login Google. |
 | `EMAIL_USER`, `EMAIL_PASS` | Credenciais para envio de e-mail; `SMTP_USER` e `SMTP_PASS` são alternativas. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` | Configurações opcionais do servidor e remetente SMTP. Os padrões de host e porta são `smtp.gmail.com` e `587`. |
@@ -140,14 +146,25 @@ Não publique o `.env`, senhas, tokens ou chaves. Consulte as opções acima e a
 
 ### Banco de dados
 
-Ao iniciar, a API tenta conectar ao MySQL, criar o banco e garantir as tabelas necessárias. A conta configurada precisa das permissões adequadas; confira os avisos no terminal, pois uma conexão estabelecida não garante que toda a estrutura foi criada corretamente. Os scripts versionados estão em [`database/`](database/); não é necessário executá-los manualmente no fluxo de inicialização automático.
+Ao iniciar ou reconectar, a API usa `DB_USER` e `DB_PASSWORD` para acessar o banco **já preparado**. Ela verifica as tabelas e as colunas de recuperação de senha, mas não cria nem altera a estrutura. Se o banco ou uma dessas estruturas estiver ausente, a conexão é informada como indisponível e o terminal orienta a executar a manutenção.
 
-Se o MySQL estiver indisponível, a aplicação pode iniciar com dados em memória para demonstração, mas **esses dados se perdem ao reiniciar**. Salvar e editar orçamentos e recuperar senha exigem banco de dados disponível. O código inclui contas de demonstração em [`data.repository.ts`](backend/construtec-api/src/repositories/data.repository.ts); elas usam credenciais conhecidas e não são adequadas para produção. Contas já existentes no banco podem ter credenciais diferentes.
+Para criar ou atualizar a estrutura, faça backup antes em um banco existente e execute separadamente `npm run db:migrate` com uma conta administrativa autorizada. Configure `DB_ADMIN_USER` e `DB_ADMIN_PASSWORD` somente no ambiente desse comando; ele usa `DB_HOST`, `DB_PORT` e `DB_NAME` para escolher o mesmo servidor e banco da aplicação. No PowerShell local, por exemplo, para o MariaDB atual com `root` sem senha:
+
+```powershell
+$env:DB_ADMIN_USER = "root"
+$env:DB_ADMIN_PASSWORD = ""
+npm.cmd run db:migrate
+Remove-Item Env:\DB_ADMIN_USER, Env:\DB_ADMIN_PASSWORD
+```
+
+Para produção, use uma senha administrativa forte, fornecida por um gerenciador de segredos ou outro mecanismo seguro, sem incluí-la no código ou em comandos do histórico. Mantenha essas credenciais fora do processo da API. A conta de execução necessita de `SELECT`, `INSERT`, `UPDATE` e `DELETE` nas tabelas do banco; ela não precisa de `CREATE`, `ALTER` ou `DROP`. O comando administrativo precisa de `CREATE` para o banco e suas tabelas e `ALTER` para atualizações da estrutura. O comando de manutenção altera a estrutura existente e não apaga dados intencionalmente, mas comandos DDL não são transacionais; confira o backup e as permissões antes de executá-lo. Os scripts em [`database/`](database/) são recursos adicionais e não são executados automaticamente por esse comando.
+
+Se o MySQL estiver indisponível, a aplicação pode iniciar com dados de catálogo em memória, mas **login, cadastro, validação de sessão, salvamento de orçamentos e recuperação de senha exigem o banco de dados disponível**. O código inclui contas de demonstração em [`data.repository.ts`](backend/construtec-api/src/repositories/data.repository.ts), inseridas ao inicializar um banco sem usuários; elas usam credenciais conhecidas e não são adequadas para produção. Contas já existentes no banco podem ter credenciais diferentes.
 
 ### Login Google e recuperação de senha
 
 - **Google:** crie um OAuth Client ID do tipo aplicativo Web, configure `GOOGLE_CLIENT_ID` e autorize no Google Cloud a origem exata utilizada, por exemplo `http://127.0.0.1:3000`. `localhost` e `127.0.0.1` são origens diferentes.
-- **Recuperação:** configure MySQL, `FRONTEND_URL` e as credenciais SMTP. Para Gmail, utilize uma senha de aplicativo, não a senha normal da conta.
+- **Recuperação:** configure MySQL e as credenciais SMTP. Para Gmail, utilize uma senha de aplicativo, não a senha normal da conta. Em **Esqueci minha senha**, informe o e-mail e digite na aplicação o código temporário recebido para criar uma nova senha. O código expira após uma hora, é de uso único e não altera a senha atual até a confirmação da nova senha. Uma nova solicitação invalida o código anterior.
 
 ## Como usar
 
@@ -168,7 +185,7 @@ A URL base local é `http://127.0.0.1:3000/api`. Rotas protegidas utilizam `Auth
 | GET | `/health` | Verificar a disponibilidade da API. |
 | POST | `/auth/register`, `/auth/login` | Criar conta e iniciar sessão. |
 | GET | `/auth/me` | Consultar o perfil autenticado. |
-| POST | `/auth/esqueci-senha`, `/auth/redefinir-senha` | Solicitar recuperação e redefinir senha. |
+| POST | `/auth/esqueci-senha`, `/auth/verificar-codigo-recuperacao`, `/auth/redefinir-senha` | Solicitar código, verificá-lo e redefinir senha. |
 | POST | `/calculos/:tipo` | Calcular materiais para um tipo de obra; exige autenticação. |
 | GET, POST | `/orcamentos` | Listar ou criar orçamentos; a criação exige autenticação e MySQL. |
 | PUT, DELETE | `/orcamentos/:id` | Atualizar ou excluir um orçamento; exige autenticação. |
@@ -185,25 +202,28 @@ Na raiz do projeto:
 npm run lint
 npm run build
 node --import tsx --test scripts\painting-ceiling.test.ts
+node --import tsx --test scripts\calculation-api.test.ts
+node --import tsx --test scripts\catalog-budget-api.test.ts
 node --import tsx --test scripts\documentation.test.ts
+node --import tsx --test scripts\password-recovery.test.mjs
+node --import tsx --test scripts\auth-database.test.mjs
 npm run docs
 ```
 
-`lint` verifica os tipos TypeScript; `build` compila a aplicação; os testes verificam o cálculo de pintura e as rotas do README. `docs` apenas verifica a existência e o título do README, não os fluxos da aplicação.
+`lint` verifica os tipos TypeScript; `build` compila a aplicação; os testes verificam os cálculos e preços pela API, o histórico, o cálculo de pintura, as rotas do README, a autenticação e a recuperação de senha com banco e envio de e-mail simulados. `docs` apenas verifica a existência e o título do README.
 
 ## Solução de problemas
 
 | Problema | Verificação |
 |---|---|
 | Tela branca ou porta 3000 ocupada | Encerre o Five Server, Live Server ou outro processo nessa porta. Execute `npm run dev` e acesse o endereço informado pelo servidor. |
-| MySQL indisponível | Confira se o serviço está ativo, as variáveis `DB_*`, as permissões e os avisos no terminal. Em memória não é possível salvar orçamentos. |
+| MySQL indisponível | Confira se o serviço está ativo, as variáveis `DB_*`, as permissões e os avisos no terminal. Sem banco, não é possível autenticar ou salvar orçamentos. |
 | Login Google não funciona | Confira o Client ID e a origem exata autorizada no Google Cloud. |
-| E-mail de recuperação não chega | Confira MySQL, credenciais e configurações SMTP, `FRONTEND_URL` e os logs, sem compartilhar dados sensíveis. |
+| E-mail de recuperação não chega | Confira MySQL, credenciais e configurações SMTP, a caixa de spam e os logs, sem compartilhar dados sensíveis. |
 | Cálculos pendentes desapareceram | Eles ficam na memória da página até salvar; sair ou atualizar pode descartá-los. |
 
 ## Limitações e documentação complementar
 
 - A disponibilidade do banco, serviços externos e permissões do navegador afetam algumas funcionalidades.
-- Na criação de orçamento com vários cálculos, o custo inicial registrado na visão administrativa usa o cálculo principal. Na atualização, o custo salvo considera a soma dos cálculos.
 - As contas de demonstração e a chave JWT padrão não são apropriadas para implantação pública.
 - O README é a documentação principal do projeto e pode ser consultado ou baixado na página **Sobre**.

@@ -35,6 +35,7 @@ export interface MaterialItem {
   totalPrice: number;
   commercialPackageDescription?: string;
   purpose?: string;
+  priceSource?: string;
 }
 
 export interface CalculationResult {
@@ -56,6 +57,7 @@ export interface CalculationResult {
   priceDisclaimer: string;
   inputSummary: Record<string, string | number>;
   calculatedAt: string;
+  signature?: string;
   formValues?: Record<string, string | number | boolean>;
   location?: RegionalLocation;
 }

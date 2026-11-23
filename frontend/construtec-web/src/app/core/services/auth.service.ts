@@ -84,13 +84,12 @@ export class AuthService {
         this.setSession({ ...current, ...data.user, token, isLoggedIn: true }, token);
         return true;
       }
+      this.logout();
       return false;
-    } catch (err: any) {
-      if (err?.status === 401 || err?.status === 403 || err?.status === 404) {
-        this.logout();
-        return false;
-      }
-      return true;
+    } catch (err) {
+      console.error('[Auth] Não foi possível verificar a sessão:', err);
+      this.logout();
+      return false;
     }
   }
 
@@ -302,6 +301,17 @@ export class AuthService {
     );
   }
 
+  async verifyPasswordRecoveryCode(token: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      await firstValueFrom(
+        this.http.post<{ success: boolean }>('/api/auth/verificar-codigo-recuperacao', { token: token.trim() })
+      );
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.error?.error || 'Não foi possível verificar o código.' };
+    }
+  }
+
   async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; error?: string; message?: string }> {
     const passCheck = this.validatePassword(newPassword);
     if (!passCheck.valid) {
@@ -316,7 +326,7 @@ export class AuthService {
       );
       return { success: true, message: data.message };
     } catch (err: any) {
-      return { success: false, error: err?.error?.error || 'Link inválido ou erro ao redefinir a senha.' };
+      return { success: false, error: err?.error?.error || 'Código inválido ou erro ao redefinir a senha.' };
     }
   }
 

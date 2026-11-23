@@ -9,11 +9,37 @@ import {
   userWorksStore
 } from '../repositories/data.repository';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { isDeepStrictEqual } from 'node:util';
+import { verifyCalculation } from '../utils/calculation-integrity';
 
-export function listBudgets(req: AuthenticatedRequest, res: Response): void {
+function validCalculationResults(results: unknown): results is SavedBudget['calculationResult'][] {
+  return Array.isArray(results) && results.length > 0 && results.every(result =>
+    result && typeof result.totalEstimatedCost === 'number' && Number.isFinite(result.totalEstimatedCost) &&
+    result.totalEstimatedCost >= 0 && Array.isArray(result.materials)
+  );
+}
+
+function calculationTotal(results: SavedBudget['calculationResult'][]): number {
+  return Math.round(results.reduce((sum, result) => sum + result.totalEstimatedCost, 0) * 100) / 100;
+}
+
+export async function listBudgets(req: AuthenticatedRequest, res: Response): Promise<void> {
   const user = req.user;
   if (!user) {
     res.json([]);
+    return;
+  }
+
+  const dbPool = getDbPool();
+  if (!getDbState().connected || !dbPool) {
+    res.status(503).json({ error: 'Banco de dados indisponível. Não foi possível consultar os orçamentos.' });
+    return;
+  }
+  try {
+    await dbPool.query('SELECT 1');
+  } catch (err) {
+    console.error('[MySQL] Erro ao consultar banco para listar orçamentos:', err);
+    res.status(503).json({ error: 'Banco de dados indisponível. Não foi possível consultar os orçamentos.' });
     return;
   }
 
@@ -35,6 +61,16 @@ export async function createBudget(req: AuthenticatedRequest, res: Response): Pr
     const now = new Date().toISOString();
     const budgetId = body.id || `orc_${Date.now()}`;
     const location = body.location || REGIONAL_LOCATIONS[0];
+    const results = Array.isArray(body.calculationResults) && body.calculationResults.length
+      ? body.calculationResults : [body.calculationResult];
+    if (!validCalculationResults(results)) {
+      res.status(400).json({ error: 'Os cálculos do orçamento são inválidos.' });
+      return;
+    }
+    if (!user || results.some(result => !verifyCalculation(result, user.id))) {
+      res.status(400).json({ error: 'Os cálculos precisam ser gerados novamente pelo servidor antes de salvar.' });
+      return;
+    }
 
     const newBudget: SavedBudget = {
       id: budgetId,
@@ -45,10 +81,8 @@ export async function createBudget(req: AuthenticatedRequest, res: Response): Pr
       location,
       workType: body.workType || body.calculationResult?.workType || 'muro',
       workTypeName: body.workTypeName || body.calculationResult?.workTypeName || 'Obra Civil',
-      calculationResult: body.calculationResult,
-      calculationResults: Array.isArray(body.calculationResults) && body.calculationResults.length
-        ? body.calculationResults
-        : [body.calculationResult],
+      calculationResult: results[0],
+      calculationResults: results,
       status: body.status || 'rascunho',
       createdAt: body.createdAt || now,
       updatedAt: now,
@@ -64,7 +98,7 @@ export async function createBudget(req: AuthenticatedRequest, res: Response): Pr
       workType: newBudget.workType,
       workTypeName: newBudget.workTypeName,
       status: newBudget.status,
-      totalCost: Number(newBudget.calculationResult?.totalEstimatedCost || 0),
+      totalCost: calculationTotal(results),
       locationCity: location.city,
       locationUf: location.uf,
       createdAt: now,
@@ -167,11 +201,15 @@ export async function updateBudget(req: AuthenticatedRequest, res: Response): Pr
   }
 
   const results = req.body?.calculationResults ?? target.calculationResults ?? [target.calculationResult];
-  if (!Array.isArray(results) || results.length === 0 || results.some(result =>
-    !result || typeof result.totalEstimatedCost !== 'number' || !Number.isFinite(result.totalEstimatedCost) ||
-    result.totalEstimatedCost < 0 || !Array.isArray(result.materials)
-  )) {
+  if (!validCalculationResults(results)) {
     res.status(400).json({ error: 'Os cálculos do orçamento são inválidos.' });
+    return;
+  }
+  const previous = target.calculationResults?.length ? target.calculationResults : [target.calculationResult];
+  if (!user || results.some(result =>
+    !verifyCalculation(result, user.id) && !previous.some(saved => isDeepStrictEqual(saved, result))
+  )) {
+    res.status(400).json({ error: 'Os cálculos precisam ser gerados novamente pelo servidor antes de salvar.' });
     return;
   }
   const updated: SavedBudget = {
@@ -186,7 +224,7 @@ export async function updateBudget(req: AuthenticatedRequest, res: Response): Pr
     updatedAt: new Date().toISOString()
   };
 
-  const totalCost = Math.round(results.reduce((sum, result) => sum + result.totalEstimatedCost, 0) * 100) / 100;
+  const totalCost = calculationTotal(results);
 
   const dbPool = getDbPool();
   const dbState = getDbState();
@@ -255,16 +293,30 @@ export async function deleteBudget(req: AuthenticatedRequest, res: Response): Pr
     return;
   }
 
+  const dbPool = getDbPool();
+  const dbState = getDbState();
+  if (!dbState.connected || !dbPool) {
+    res.status(503).json({ error: 'Banco de dados indisponível. O orçamento não foi excluído.' });
+    return;
+  }
+  try {
+    const [result] = await dbPool.execute<import('mysql2').ResultSetHeader>(
+      'DELETE FROM obra WHERE codigo_externo = ?', [id]
+    );
+    if (!result.affectedRows) {
+      res.status(404).json({ error: 'Orçamento não encontrado no banco de dados.' });
+      return;
+    }
+  } catch (err) {
+    console.error('[MySQL] Erro ao excluir orçamento:', err);
+    res.status(503).json({ error: 'Não foi possível excluir o orçamento no banco de dados.' });
+    return;
+  }
+
   budgetsStore.splice(idx, 1);
   const wIdx = userWorksStore.findIndex(w => w.id === id);
   if (wIdx !== -1) {
     userWorksStore.splice(wIdx, 1);
-  }
-
-  const dbPool = getDbPool();
-  const dbState = getDbState();
-  if (dbState.connected && dbPool) {
-    await dbPool.query('DELETE FROM obra WHERE codigo_externo = ?', [id]).catch(() => {});
   }
 
   await recordAuditLog(

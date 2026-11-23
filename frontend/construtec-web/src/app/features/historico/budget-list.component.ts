@@ -71,6 +71,14 @@ import { SavedBudget } from '../../core/models/types';
           </button>
         </div>
       } @else {
+        @if (obraService.loadError() || errorMessage()) {
+          <div class="p-3 rounded-xl bg-red-50 text-red-700 text-sm" role="alert">
+            {{ errorMessage() || obraService.loadError() }}
+            @if (obraService.loadError()) {
+              <button type="button" class="ml-2 underline font-bold" (click)="reload()">Tentar novamente</button>
+            }
+          </div>
+        }
         <!-- Filtros -->
         <div class="flex flex-col sm:flex-row gap-3">
           <div class="relative flex-1">
@@ -94,7 +102,7 @@ import { SavedBudget } from '../../core/models/types';
           </select>
         </div>
 
-        @if (filteredBudgets().length === 0) {
+        @if (!obraService.loadError() && filteredBudgets().length === 0) {
           <div class="p-10 rounded-2xl bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 text-center space-y-3">
             <p class="text-base font-bold text-slate-800 dark:text-slate-100">
               Nenhum orçamento registrado ainda
@@ -178,12 +186,13 @@ import { SavedBudget } from '../../core/models/types';
 export class BudgetListComponent {
   readonly ui = inject(UiStateService);
   readonly auth = inject(AuthService);
-  private readonly obraService = inject(ObraService);
+  readonly obraService = inject(ObraService);
   private readonly router = inject(Router);
   readonly calculations = budgetCalculations;
   readonly total = budgetTotal;
 
   searchTerm = signal('');
+  readonly errorMessage = signal('');
   statusFilter = signal('todos');
 
   readonly filteredBudgets = computed(() => {
@@ -218,6 +227,16 @@ export class BudgetListComponent {
   }
 
   async remove(id: string): Promise<void> {
-    await this.obraService.deleteBudget(id);
+    this.errorMessage.set('');
+    try {
+      await this.obraService.deleteBudget(id);
+    } catch (err) {
+      console.error('[Orçamentos] Falha ao excluir orçamento:', err);
+      this.errorMessage.set('Não foi possível excluir o orçamento. Tente novamente.');
+    }
+  }
+
+  async reload(): Promise<void> {
+    await this.obraService.loadBudgets(this.auth.isLoggedIn(), this.auth.currentUser()?.id);
   }
 }

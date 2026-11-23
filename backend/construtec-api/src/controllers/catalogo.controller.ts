@@ -1,6 +1,12 @@
 import { Request, Response } from 'express';
 import { BASE_MATERIALS_CATALOG, REGIONAL_LOCATIONS } from '../models/catalog.data';
 import { materialsStore, workTypesStore } from '../repositories/data.repository';
+import { WORK_TYPES } from '../models/work-type-display.data';
+import { officialPrices } from '../services/sinapi-pricing.service';
+
+export function getCalculatorWorkTypes(_req: Request, res: Response): void {
+  res.json(WORK_TYPES);
+}
 
 export function getWorkTypes(_req: Request, res: Response): void {
   res.json(workTypesStore.filter(w => w.active));
@@ -21,12 +27,16 @@ export function getMaterialById(req: Request, res: Response): void {
   res.json(found);
 }
 
-export function getRegionalPrices(req: Request, res: Response): void {
+export async function getRegionalPrices(req: Request, res: Response): Promise<void> {
   const uf = String(req.query.uf || 'SP').toUpperCase();
   const location = REGIONAL_LOCATIONS.find(l => l.uf === uf) || REGIONAL_LOCATIONS[0];
+  const prices = await officialPrices(location.uf);
   const items = BASE_MATERIALS_CATALOG.map(item => ({
     ...item,
-    regionalPrice: Math.round(item.basePrice * location.priceMultiplier * 100) / 100,
+    regionalPrice: prices.get(item.id)?.price ?? Math.round(item.basePrice * location.priceMultiplier * 100) / 100,
+    priceSource: prices.has(item.id)
+      ? `SINAPI ${location.uf} ${prices.get(item.id)!.reference} — insumo ${prices.get(item.id)!.code}: ${prices.get(item.id)!.description}`
+      : 'Estimativa não oficial',
     uf: location.uf
   }));
   res.json({ location, items, allLocations: REGIONAL_LOCATIONS });

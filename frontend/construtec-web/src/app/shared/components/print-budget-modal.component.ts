@@ -127,6 +127,7 @@ import { BrlCurrencyPipe } from '../pipes/brl-currency.pipe';
                     <div><dt>Qtd. técnica</dt><dd class="font-semibold">{{ mat.theoreticalQuantity ?? mat.quantityRaw }}</dd></div>
                     <div><dt>Qtd. comercial</dt><dd class="font-semibold">{{ mat.commercialQuantity ?? mat.quantityCommercial }} {{ mat.unit }}</dd></div>
                     <div><dt>Preço unitário</dt><dd class="font-semibold">{{ mat.unitPrice | brl }}</dd></div>
+                    @if (mat.priceSource) { <div><dt>Fonte</dt><dd>{{ mat.priceSource }}</dd></div> }
                     <div><dt>Subtotal</dt><dd class="font-bold">{{ mat.totalPrice | brl }}</dd></div>
                   </dl>
                 </div>
@@ -153,6 +154,9 @@ import { BrlCurrencyPipe } from '../pipes/brl-currency.pipe';
                         }
                         @if (mat.commercialPackageDescription) {
                           <p class="text-xs text-slate-500 dark:text-slate-400">{{ mat.commercialPackageDescription }}</p>
+                        }
+                        @if (mat.priceSource) {
+                          <p class="text-xs text-slate-500 dark:text-slate-400">{{ mat.priceSource }}</p>
                         }
                       </td>
                       <td class="py-3 px-4 text-right font-mono text-xs text-slate-600 dark:text-slate-300">

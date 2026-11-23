@@ -26,9 +26,5 @@ export const adminGuard: CanActivateFn = () => {
     return false;
   }
 
-  if (auth.isAdmin() && !ui.isUserTestMode()) {
-    return true;
-  }
-
   return true;
 };

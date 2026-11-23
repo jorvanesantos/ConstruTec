@@ -25,6 +25,7 @@ apiRouter.post('/auth/change-password', authenticateToken, authController.change
 apiRouter.post('/auth/avatar', authenticateToken, authController.updateAvatar);
 apiRouter.post('/auth/esqueci-senha', authController.requestPasswordRecovery);
 apiRouter.post('/auth/solicitar-recuperacao', authController.requestPasswordRecovery);
+apiRouter.post('/auth/verificar-codigo-recuperacao', authController.verifyPasswordRecoveryCode);
 apiRouter.post('/auth/redefinir-senha', authController.resetPassword);
 
 // Motor de Cálculo (requer usuário autenticado)
@@ -43,6 +44,7 @@ apiRouter.put('/obras/:id', authenticateToken, obraController.updateBudget);
 apiRouter.delete('/obras/:id', authenticateToken, obraController.deleteBudget);
 
 // Catálogo e Preços Regionais
+apiRouter.get('/calculadora/tipos', catalogoController.getCalculatorWorkTypes);
 apiRouter.get('/tipos-obras', catalogoController.getWorkTypes);
 apiRouter.get('/tipos-construcao', catalogoController.getWorkTypes);
 apiRouter.get('/materiais', catalogoController.getMaterials);

@@ -174,7 +174,7 @@ export class SidebarComponent {
   ];
 
   visibleItems(): NavItem[] {
-    const showAdmin = this.auth.isAdmin() && !this.ui.isUserTestMode();
+    const showAdmin = this.auth.isAdmin();
     return this.navItems.filter(item => !item.adminOnly || showAdmin);
   }
 }

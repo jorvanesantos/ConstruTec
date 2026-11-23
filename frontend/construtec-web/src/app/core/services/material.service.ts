@@ -1,8 +1,19 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { PriceCatalogItem, RegionalLocation, WorkTypeInfo } from '../models/types';
-import { BASE_MATERIALS_CATALOG, REGIONAL_LOCATIONS, WORK_TYPES } from '../models/catalog';
+
+export interface RegionalPriceItem extends PriceCatalogItem {
+  regionalPrice: number;
+  uf: string;
+  priceSource: string;
+}
+
+export interface RegionalPrices {
+  location: RegionalLocation;
+  items: RegionalPriceItem[];
+  allLocations: RegionalLocation[];
+}
 
 @Injectable({
   providedIn: 'root'
@@ -10,30 +21,29 @@ import { BASE_MATERIALS_CATALOG, REGIONAL_LOCATIONS, WORK_TYPES } from '../model
 export class MaterialService {
   private readonly http = inject(HttpClient);
 
-  getStaticWorkTypes(): WorkTypeInfo[] {
-    return WORK_TYPES;
+  readonly workTypes = signal<WorkTypeInfo[]>([]);
+  readonly workTypesError = signal('');
+  private loadingWorkTypes?: Promise<void>;
+
+  loadWorkTypes(): Promise<void> {
+    if (this.loadingWorkTypes) return this.loadingWorkTypes;
+    this.workTypesError.set('');
+    this.loadingWorkTypes = firstValueFrom(this.http.get<WorkTypeInfo[]>('/api/calculadora/tipos'))
+      .then(items => {
+        if (!Array.isArray(items) || items.length === 0) {
+          throw new Error('A API retornou uma lista vazia ou inválida de tipos de obra.');
+        }
+        this.workTypes.set(items);
+      })
+      .catch((err: unknown) => {
+        console.error('[Catálogo] Falha ao carregar tipos de obra:', err);
+        this.workTypesError.set('Não foi possível carregar os tipos de obra. Verifique a conexão.');
+      })
+      .finally(() => { this.loadingWorkTypes = undefined; });
+    return this.loadingWorkTypes;
   }
 
-  getRegionalLocations(): RegionalLocation[] {
-    return REGIONAL_LOCATIONS;
-  }
-
-  getStaticMaterials(): PriceCatalogItem[] {
-    return BASE_MATERIALS_CATALOG;
-  }
-
-  async fetchWorkTypes(): Promise<WorkTypeInfo[]> {
-    try {
-      const remote = await firstValueFrom(this.http.get<any[]>('/api/tipos-obras'));
-      if (Array.isArray(remote) && remote.length > 0) {
-        return WORK_TYPES.filter(w => {
-          const matched = remote.find(r => r.code === w.id || r.codigo === w.id);
-          return matched ? matched.active !== false : true;
-        });
-      }
-    } catch {
-      // fallback estático
-    }
-    return WORK_TYPES;
+  getRegionalPrices(uf: string): Promise<RegionalPrices> {
+    return firstValueFrom(this.http.get<RegionalPrices>('/api/precos', { params: { uf } }));
   }
 }

@@ -72,7 +72,9 @@ export class AppComponent implements OnInit {
 
   async ngOnInit(): Promise<void> {
     this.ui.syncTabFromUrl(this.router.url);
-    void this.ui.detectRegionAutomatically();
+    void this.ui.loadLocations().then(loaded => {
+      if (loaded) void this.ui.detectRegionAutomatically();
+    });
 
     this.router.events
       .pipe(filter((ev): ev is NavigationEnd => ev instanceof NavigationEnd))
@@ -82,8 +84,8 @@ export class AppComponent implements OnInit {
 
     if (this.auth.isLoggedIn()) {
       const valid = await this.auth.verifySession();
-      if (!valid && this.router.url.startsWith('/admin')) {
-        this.ui.openAuthModal('Sessão expirada. Faça login novamente para acessar o Painel Administrativo.');
+      if (!valid) {
+        this.ui.openAuthModal('Não foi possível validar sua sessão. Verifique a conexão e faça login novamente.');
       }
     }
 

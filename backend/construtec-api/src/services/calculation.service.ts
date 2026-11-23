@@ -54,24 +54,16 @@ function resolveLocation(location?: Partial<RegionalLocation> | string): Regiona
     const found = REGIONAL_LOCATIONS.find(l => l.uf.toUpperCase() === location.toUpperCase());
     if (found) return found;
   } else if (location && typeof location === 'object') {
-    if (location.priceMultiplier && location.uf) {
-      return {
-        uf: location.uf,
-        stateName: location.stateName || location.uf,
-        city: location.city || location.stateName || location.uf,
-        priceMultiplier: Number(location.priceMultiplier) || 1.0,
-        source: location.source || `SINAPI-${location.uf}`
-      };
-    }
-    if (location.uf) {
+    if (typeof location.uf === 'string') {
       const found = REGIONAL_LOCATIONS.find(l => l.uf.toUpperCase() === location.uf!.toUpperCase());
-      if (found) return found;
+      if (found) return { ...found, city: typeof location.city === 'string' && location.city.trim() ? location.city : found.city };
     }
   }
   return REGIONAL_LOCATIONS[0];
 }
 
-function normalizeBlockType(raw?: string): 'bloco_14' | 'bloco_09' | 'tijolo_8f' {
+function normalizeBlockType(raw?: string): 'bloco_14' | 'bloco_14_6' | 'bloco_19' | 'bloco_09' | 'tijolo_8f' {
+  if (raw === 'bloco_14_6' || raw === 'bloco_19') return raw;
   if (raw === 'bloco_9' || raw === 'bloco_09') return 'bloco_09';
   if (raw === 'tijolo_8f') return 'tijolo_8f';
   return 'bloco_14';
@@ -121,7 +113,13 @@ export class CalculationService {
     let blockId = 'mat_bloco_concreto_14';
     let blockName = 'Bloco de Concreto 14x19x39';
 
-    if (blockType === 'bloco_09') {
+    if (blockType === 'bloco_14_6') {
+      blockId = 'mat_bloco_concreto_14_6';
+      blockName = 'Bloco de concreto 14x19x39, FBK 6 MPa';
+    } else if (blockType === 'bloco_19') {
+      blockId = 'mat_bloco_concreto_19';
+      blockName = 'Bloco de concreto 19x19x39, FBK 4,5 MPa';
+    } else if (blockType === 'bloco_09') {
       blockId = 'mat_bloco_concreto_09';
       blockName = 'Bloco de Concreto 09x19x39';
     } else if (blockType === 'tijolo_8f') {
@@ -200,7 +198,11 @@ export class CalculationService {
 
     let blockConsumptionPerM2 = 12.5;
     let blockId = 'mat_bloco_concreto_14';
-    if (blockType === 'bloco_09') {
+    if (blockType === 'bloco_14_6') {
+      blockId = 'mat_bloco_concreto_14_6';
+    } else if (blockType === 'bloco_19') {
+      blockId = 'mat_bloco_concreto_19';
+    } else if (blockType === 'bloco_09') {
       blockId = 'mat_bloco_concreto_09';
     } else if (blockType === 'tijolo_8f') {
       blockConsumptionPerM2 = 25.0;

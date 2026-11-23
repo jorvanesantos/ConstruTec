@@ -8,7 +8,6 @@ import {
   Navigation,
   X
 } from 'lucide-angular';
-import { REGIONAL_LOCATIONS } from '../../core/models/catalog';
 import { RegionalLocation } from '../../core/models/types';
 import { UiStateService } from '../../core/services/ui-state.service';
 
@@ -64,9 +63,15 @@ import { UiStateService } from '../../core/services/ui-state.service';
             @if (statusMessage()) {
               <p class="text-xs text-amber-600 dark:text-amber-400 font-medium px-1">{{ statusMessage() }}</p>
             }
+            @if (ui.locationsError()) {
+              <p class="text-sm text-red-600" role="alert">
+                {{ ui.locationsError() }}
+                <button type="button" class="ml-2 underline font-bold" (click)="ui.loadLocations()">Tentar novamente</button>
+              </p>
+            }
 
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-              @for (loc of locations; track loc.uf) {
+              @for (loc of ui.locations(); track loc.uf) {
                 <button
                   type="button"
                   (click)="select(loc)"
@@ -99,7 +104,6 @@ import { UiStateService } from '../../core/services/ui-state.service';
 })
 export class RegionalLocationModalComponent {
   readonly ui = inject(UiStateService);
-  readonly locations = REGIONAL_LOCATIONS;
   readonly statusMessage = signal('');
 
   readonly MapPin = MapPin;

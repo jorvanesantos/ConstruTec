@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { createExpressApp } from './app';
 import { connectDatabase } from './config/database';
 import { syncDataFromMySQL } from './repositories/data.repository';
+import { startSinapiScheduler } from './services/sinapi-scheduler.service';
 
 export async function bootstrapBackend(port = Number(process.env.PORT || 3000)) {
   const app = createExpressApp();
@@ -9,6 +10,7 @@ export async function bootstrapBackend(port = Number(process.env.PORT || 3000)) 
   if (connected) {
     await syncDataFromMySQL();
   }
+  startSinapiScheduler();
   return { app, port };
 }
 

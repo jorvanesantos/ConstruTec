@@ -6,6 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import { createExpressApp } from './backend/construtec-api/src/app';
 import { connectDatabase } from './backend/construtec-api/src/config/database';
 import { syncDataFromMySQL } from './backend/construtec-api/src/repositories/data.repository';
+import { startSinapiScheduler } from './backend/construtec-api/src/services/sinapi-scheduler.service';
 
 async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production' || process.argv.includes('--production');
@@ -50,6 +51,7 @@ async function startServer() {
     });
   });
   console.log('[ConstruTec] Servidor full-stack (Angular 19 + Express + MySQL) rodando em http://127.0.0.1:3000');
+  startSinapiScheduler();
 }
 
 startServer().catch(err => {

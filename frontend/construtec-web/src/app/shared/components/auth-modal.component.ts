@@ -111,14 +111,14 @@ type AuthMode = 'login' | 'register';
                 <div>
                   <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1.5">E-mail</label>
                   <div class="relative">
-                    <lucide-icon [img]="Mail" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
+                    <lucide-icon [img]="Mail" class="pointer-events-none z-10 w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
                     <input
                       type="email"
                       name="email"
                       [(ngModel)]="email"
                       required
-                      placeholder="  seu.email@exemplo.com"
-                      class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                      placeholder="seu.email@exemplo.com"
+                      class="w-full pl-12 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
                     />
                   </div>
                 </div>
@@ -135,14 +135,14 @@ type AuthMode = 'login' | 'register';
                     </button>
                   </div>
                   <div class="relative">
-                    <lucide-icon [img]="Lock" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
+                    <lucide-icon [img]="Lock" class="pointer-events-none z-10 w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
                     <input
                       [type]="showPassword() ? 'text' : 'password'"
                       name="password"
                       [(ngModel)]="password"
                       required
-                      placeholder="  ••••••"
-                      class="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                      placeholder="••••••"
+                      class="w-full pl-12 pr-12 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
                     />
                     <button
                       type="button"
@@ -178,14 +178,14 @@ type AuthMode = 'login' | 'register';
                 <div>
                   <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">Nome Completo</label>
                   <div class="relative">
-                    <lucide-icon [img]="User" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
+                    <lucide-icon [img]="User" class="pointer-events-none z-10 w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
                     <input
                       type="text"
                       name="regName"
                       [(ngModel)]="name"
                       required
                       placeholder="Ex: João Silva"
-                      class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                      class="w-full pl-12 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none"
                     />
                   </div>
                 </div>
@@ -193,14 +193,14 @@ type AuthMode = 'login' | 'register';
                 <div>
                   <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">E-mail</label>
                   <div class="relative">
-                    <lucide-icon [img]="Mail" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
+                    <lucide-icon [img]="Mail" class="pointer-events-none z-10 w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
                     <input
                       type="email"
                       name="regEmail"
                       [(ngModel)]="email"
                       required
                       placeholder="seu.email@exemplo.com"
-                      class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                      class="w-full pl-12 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none"
                     />
                   </div>
                 </div>
@@ -223,7 +223,7 @@ type AuthMode = 'login' | 'register';
                 <div>
                   <label class="block text-xs font-semibold text-slate-700 dark:text-slate-200 mb-1">Senha (mín. 6 caracteres)</label>
                   <div class="relative">
-                    <lucide-icon [img]="Lock" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
+                    <lucide-icon [img]="Lock" class="pointer-events-none z-10 w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
                     <input
                       [type]="showPassword() ? 'text' : 'password'"
                       name="regPassword"
@@ -231,7 +231,7 @@ type AuthMode = 'login' | 'register';
                       required
                       minlength="6"
                       placeholder="Crie sua senha"
-                      class="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                      class="w-full pl-12 pr-12 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-amber-500 outline-none"
                     />
                     <button
                       type="button"

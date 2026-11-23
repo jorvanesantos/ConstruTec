@@ -46,7 +46,7 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
   standalone: true,
   imports: [CommonModule, FormsModule, LucideAngularModule, AuthGuardViewComponent, BrlCurrencyPipe],
   template: `
-    @if (!auth.isAdmin() || ui.isUserTestMode()) {
+    @if (!auth.isAdmin()) {
       <app-auth-guard-view
         [requireAdmin]="true"
         message="O Painel Administrativo está disponível apenas para contas Administrador autenticadas."
@@ -1060,7 +1060,7 @@ export class AdminDashboardComponent implements OnInit {
 
   constructor() {
     effect(() => {
-      const canAccess = this.auth.isAdminAccount() && !this.ui.isUserTestMode();
+      const canAccess = this.auth.isAdminAccount();
       if (canAccess && !this.hasLoadedOnce) {
         this.hasLoadedOnce = true;
         this.loadAll();
@@ -1071,7 +1071,7 @@ export class AdminDashboardComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    if (this.auth.isAdmin() && !this.ui.isUserTestMode() && !this.hasLoadedOnce) {
+    if (this.auth.isAdmin() && !this.hasLoadedOnce) {
       this.hasLoadedOnce = true;
       this.loadAll();
     }
@@ -1275,7 +1275,6 @@ export class AdminDashboardComponent implements OnInit {
       if (res.selfDeleted) {
         this.auth.logout();
         this.obraService.clearOnLogout();
-        this.ui.isUserTestMode.set(false);
         this.ui.navigateTo('home');
         return;
       }

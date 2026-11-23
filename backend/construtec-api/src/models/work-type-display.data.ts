@@ -1,0 +1,110 @@
+export const WORK_TYPES = [
+  {
+    id: 'muro',
+    key: 'muro',
+    name: 'Muro',
+    title: 'Muro',
+    tagline: 'Alvenaria de vedação e divisão',
+    description: 'Calcule blocos/tijolos, cimento, areia, argamassa de assentamento e desconto de vãos.',
+    icon: 'ShieldAlert',
+    defaultWaste: 10,
+    defaultWastePercentage: 10,
+    category: 'alvenaria'
+  },
+  {
+    id: 'parede',
+    key: 'parede',
+    name: 'Parede',
+    title: 'Parede',
+    tagline: 'Alvenaria interna e externa com reboco',
+    description: 'Calcule alvenaria, chapisco, emboço e reboco com base na área, espessura e acabamento.',
+    icon: 'BrickWall',
+    defaultWaste: 10,
+    defaultWastePercentage: 10,
+    category: 'alvenaria'
+  },
+  {
+    id: 'piso',
+    key: 'piso',
+    name: 'Piso',
+    title: 'Piso',
+    tagline: 'Revestimento cerâmico e porcelanato',
+    description: 'Calcule placas de piso, argamassa colante AC-I/II/III, rejunte e margem de recortes.',
+    icon: 'Grid3X3',
+    defaultWaste: 12,
+    defaultWastePercentage: 12,
+    category: 'acabamento'
+  },
+  {
+    id: 'pintura',
+    key: 'pintura',
+    name: 'Pintura',
+    title: 'Pintura',
+    tagline: 'Paredes internas, externas e tetos',
+    description: 'Calcule latas de tinta, selador preparador, massa corrida/acrílica, rolos e lixas.',
+    icon: 'Paintbrush',
+    defaultWaste: 8,
+    defaultWastePercentage: 8,
+    category: 'acabamento'
+  },
+  {
+    id: 'concreto',
+    key: 'concreto',
+    name: 'Concreto',
+    title: 'Concreto',
+    tagline: 'Lajes, vigas, pilares e pisos industriais',
+    description: 'Calcule sacos de cimento, areia lavada, pedra britada e água conforme o traço técnico.',
+    icon: 'Box',
+    defaultWaste: 10,
+    defaultWastePercentage: 10,
+    category: 'estrutural'
+  },
+  {
+    id: 'fundacao',
+    key: 'fundacao',
+    name: 'Fundação',
+    title: 'Fundação',
+    tagline: 'Sapatas, brocas e vigas baldrame',
+    description: 'Calcule volume de concreto estrutural, barras de aço CA-50 e tábuas para formas.',
+    icon: 'Anchor',
+    defaultWaste: 12,
+    defaultWastePercentage: 12,
+    category: 'estrutural'
+  },
+  {
+    id: 'telhado',
+    key: 'telhado',
+    name: 'Telhado',
+    title: 'Telhado',
+    tagline: 'Coberturas cerâmicas, fibrocimento e metálicas',
+    description: 'Calcule quantidade de telhas com fator de inclinação, cumeeiras e madeiramento.',
+    icon: 'Home',
+    defaultWaste: 10,
+    defaultWastePercentage: 10,
+    category: 'cobertura'
+  },
+  {
+    id: 'revestimento',
+    key: 'revestimento',
+    name: 'Revestimento',
+    title: 'Revestimento',
+    tagline: 'Azulejos e pastilhas de parede',
+    description: 'Calcule azulejos de cozinha/banheiro, argamassa impermeável e rejunte fino.',
+    icon: 'Layers',
+    defaultWaste: 10,
+    defaultWastePercentage: 10,
+    category: 'acabamento'
+  },
+  {
+    id: 'outro',
+    key: 'outro',
+    name: 'Outro tipo de obra',
+    title: 'Outro tipo de obra',
+    tagline: 'Cálculo customizado e reformas rápidas',
+    description: 'Cálculo modular por área para calçadas, reparos de contrapiso ou reformas mistas.',
+    icon: 'Wrench',
+    defaultWaste: 10,
+    defaultWastePercentage: 10,
+    category: 'geral'
+  }
+];

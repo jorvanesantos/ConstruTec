@@ -8,7 +8,7 @@ import {
   ThemeMode,
   WorkTypeKey
 } from '../models/types';
-import { REGIONAL_LOCATIONS } from '../models/catalog';
+import { MaterialService } from './material.service';
 
 const THEME_KEY = 'construtec_theme';
 const LOCATION_KEY = 'construtec_location';
@@ -19,6 +19,7 @@ const LOCATION_MANUAL_KEY = 'construtec_location_manual';
 })
 export class UiStateService {
   private readonly router = inject(Router);
+  private readonly materialService = inject(MaterialService);
 
   readonly theme = signal<ThemeMode>(this.loadInitialTheme());
   readonly isDark = computed(() => this.theme() === 'dark');
@@ -26,9 +27,10 @@ export class UiStateService {
   readonly activeTab = signal<NavTab>('home');
   readonly adminSubTab = signal<AdminTabKey>('overview');
   readonly selectedWorkType = signal<WorkTypeKey>('muro');
-  readonly isUserTestMode = signal<boolean>(false);
 
   readonly currentLocation = signal<RegionalLocation>(this.loadInitialLocation());
+  readonly locations = signal<RegionalLocation[]>([]);
+  readonly locationsError = signal('');
   readonly detectingLocation = signal<boolean>(false);
   readonly locationAutoDetected = signal<boolean>(false);
   readonly mobileSidebarOpen = signal<boolean>(false);
@@ -87,7 +89,23 @@ export class UiStateService {
     } catch {
       // ignore
     }
-    return REGIONAL_LOCATIONS[0];
+    return { uf: 'SP', stateName: 'São Paulo', city: 'São Paulo (Capital/Grande SP)', priceMultiplier: 1, source: 'SINAPI-SP / Mercado Paulista' };
+  }
+
+  async loadLocations(): Promise<boolean> {
+    try {
+      const response = await this.materialService.getRegionalPrices(this.currentLocation().uf);
+      if (!response.allLocations.length) throw new Error('Lista de regiões vazia.');
+      this.locations.set(response.allLocations);
+      const current = response.allLocations.find(location => location.uf === this.currentLocation().uf) || response.location;
+      this.currentLocation.set({ ...current, city: this.hasManualLocation() ? this.currentLocation().city : current.city });
+      this.locationsError.set('');
+      return true;
+    } catch (err) {
+      console.error('[Região] Falha ao carregar regiões:', err);
+      this.locationsError.set('Não foi possível carregar as regiões. Verifique a conexão e tente novamente.');
+      return false;
+    }
   }
 
   hasManualLocation(): boolean {
@@ -132,7 +150,7 @@ export class UiStateService {
       .toUpperCase()
       .trim();
 
-    const byUf = REGIONAL_LOCATIONS.find(l => l.uf === cleanUf);
+    const byUf = this.locations().find(l => l.uf === cleanUf);
     if (byUf) {
       return {
         ...byUf,
@@ -142,7 +160,7 @@ export class UiStateService {
 
     if (stateCandidate) {
       const target = this.normalizeRegionName(stateCandidate);
-      const byName = REGIONAL_LOCATIONS.find(l => this.normalizeRegionName(l.stateName) === target);
+      const byName = this.locations().find(l => this.normalizeRegionName(l.stateName) === target);
       if (byName) {
         return {
           ...byName,
@@ -292,6 +310,10 @@ export class UiStateService {
       };
     }
 
+    if (!this.locations().length && !(await this.loadLocations())) {
+      return { detected: false, location: this.currentLocation(), message: this.locationsError() };
+    }
+
     this.detectingLocation.set(true);
 
     try {
@@ -385,13 +407,6 @@ export class UiStateService {
 
   closePrintModal(): void {
     this.printModalData.set(null);
-  }
-
-  toggleUserTestMode(): void {
-    this.isUserTestMode.update(v => !v);
-    if (this.isUserTestMode() && this.activeTab() === 'admin') {
-      this.navigateTo('calculator');
-    }
   }
 
   navigateTo(tab: NavTab, workType?: WorkTypeKey): void {

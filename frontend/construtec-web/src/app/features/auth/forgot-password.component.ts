@@ -14,15 +14,10 @@ import { AuthService } from '../../core/services/auth.service';
         <div class="space-y-2">
           <h1 class="text-2xl font-bold text-slate-900 dark:text-white">Esqueci minha senha</h1>
           <p class="text-sm text-slate-600 dark:text-slate-400">
-            Informe o e-mail da sua conta. Se ele estiver cadastrado, enviaremos um link para redefinir sua senha.
+            Informe o e-mail da sua conta. Se ele estiver cadastrado, enviaremos um código para redefinir sua senha.
           </p>
         </div>
 
-        @if (message()) {
-          <div class="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-sm" role="status">
-            {{ message() }}
-          </div>
-        }
         @if (error()) {
           <div class="p-3 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-200 text-sm" role="alert">
             {{ error() }}
@@ -52,10 +47,13 @@ import { AuthService } from '../../core/services/auth.service';
             [disabled]="loading()"
             class="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-slate-950 font-bold text-sm transition-colors"
           >
-            {{ loading() ? 'Enviando...' : 'Enviar link de redefinição' }}
+            {{ loading() ? 'Enviando...' : 'Enviar código de recuperação' }}
           </button>
         </form>
 
+        <a routerLink="/redefinir-senha" class="block text-center text-sm font-semibold text-amber-600 dark:text-amber-400 hover:underline">
+          Já tenho um código
+        </a>
         <a routerLink="/login" class="block text-center text-sm font-semibold text-amber-600 dark:text-amber-400 hover:underline">
           Voltar para o login
         </a>
@@ -69,7 +67,6 @@ export class ForgotPasswordComponent {
   private readonly auth = inject(AuthService);
 
   readonly loading = signal(false);
-  readonly message = signal('');
   readonly error = signal('');
   private readonly recoveryEmail = this.getRecoveryEmail();
   readonly form = this.formBuilder.nonNullable.group({
@@ -84,7 +81,6 @@ export class ForgotPasswordComponent {
   }
 
   async submit(): Promise<void> {
-    this.message.set('');
     this.error.set('');
     if (this.form.invalid) {
       this.form.markAllAsTouched();
@@ -96,7 +92,9 @@ export class ForgotPasswordComponent {
     this.loading.set(false);
 
     if (result.success) {
-      this.message.set(result.message || 'Se o e-mail estiver cadastrado, enviaremos um link para redefinir sua senha.');
+      await this.router.navigate(['/redefinir-senha'], {
+        state: { recoveryMessage: result.message || 'Se o e-mail estiver cadastrado, enviaremos um código para redefinir sua senha.' }
+      });
     } else {
       this.error.set(result.error || 'Não foi possível solicitar a redefinição de senha.');
     }

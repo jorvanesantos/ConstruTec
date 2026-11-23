@@ -220,8 +220,14 @@ interface FaqItem {
           </button>
         </div>
 
+        @if (materialService.workTypesError()) {
+          <div class="p-3 rounded-xl bg-red-50 text-red-700 text-sm" role="alert">
+            {{ materialService.workTypesError() }}
+            <button type="button" class="ml-2 underline font-bold" (click)="materialService.loadWorkTypes()">Tentar novamente</button>
+          </div>
+        }
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          @for (wt of workTypes; track wt.id) {
+          @for (wt of workTypes(); track wt.id) {
             <button
               type="button"
               (click)="selectWorkType(wt.id)"
@@ -298,10 +304,14 @@ interface FaqItem {
 })
 export class HomeComponent {
   readonly ui = inject(UiStateService);
-  private readonly materialService = inject(MaterialService);
+  readonly materialService = inject(MaterialService);
 
-  readonly workTypes = this.materialService.getStaticWorkTypes();
+  readonly workTypes = this.materialService.workTypes;
   readonly openFaqIndex = signal<number | null>(0);
+
+  constructor() {
+    void this.materialService.loadWorkTypes();
+  }
 
   readonly Sparkles = Sparkles;
   readonly Calculator = Calculator;

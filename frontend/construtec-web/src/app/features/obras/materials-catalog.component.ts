@@ -1,8 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ArrowLeft, LucideAngularModule, Package, Search } from 'lucide-angular';
-import { MaterialService } from '../../core/services/material.service';
+import { MaterialService, RegionalPriceItem } from '../../core/services/material.service';
 import { UiStateService } from '../../core/services/ui-state.service';
 import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
 
@@ -24,12 +24,15 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
           </button>
           <h1 class="font-display text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2.5">
             <lucide-icon [img]="Package" class="w-7 h-7 text-amber-500"></lucide-icon>
-            Catálogo de Materiais e Preços médios com base no SINAPI - Sistema Nacional de Pesquisa de Custos e Índeces da Constução Civil
+            Catálogo de Materiais e Preços
           </h1>
         </div>
 
       </div>
 
+      <p class="text-xs text-slate-600 dark:text-slate-400">
+        Preços SINAPI mostram UF e competência da última tabela importada, que pode estar defasada. Os demais são estimativas não oficiais; confirme frete e condições com o fornecedor.
+      </p>
       <div class="flex flex-col sm:flex-row gap-3">
         <div class="relative flex-1">
           <lucide-icon [img]="Search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></lucide-icon>
@@ -45,12 +48,21 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
           class="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-medium"
         >
           <option value="todas">Todas as Categorias</option>
-          @for (cat of categories; track cat) {
+          @for (cat of categories(); track cat) {
             <option [value]="cat">{{ cat }}</option>
           }
         </select>
       </div>
 
+      @if (loading()) {
+        <p class="text-sm text-slate-600 dark:text-slate-400" role="status">Carregando preços...</p>
+      }
+      @if (error()) {
+        <div class="p-3 rounded-xl bg-red-50 text-red-700 text-sm" role="alert">
+          {{ error() }}
+          <button type="button" (click)="loadPrices(ui.currentLocation().uf)" class="font-bold underline ml-2">Tentar novamente</button>
+        </div>
+      }
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         @for (item of filteredMaterials(); track item.id) {
           <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-4">
@@ -63,12 +75,13 @@ import { BrlCurrencyPipe } from '../../shared/pipes/brl-currency.pipe';
               </div>
               <h3 class="text-sm font-bold text-slate-900 dark:text-white leading-snug">{{ item.name }}</h3>
               <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">{{ item.description }}</p>
+              <p class="text-xs text-slate-500">{{ item.priceSource }}</p>
             </div>
 
             <div class="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
               <span class="text-xs text-slate-500 dark:text-slate-400">Estimativa:</span>
               <span class="text-base font-extrabold text-amber-600 dark:text-amber-400">
-                {{ getAdjustedPrice(item.basePrice) | brl }}
+                {{ item.regionalPrice | brl }}
                 <span class="text-[11px] font-normal text-slate-500">/{{ item.baseUnit }}</span>
               </span>
             </div>
@@ -82,8 +95,11 @@ export class MaterialsCatalogComponent {
   readonly ui = inject(UiStateService);
   private readonly materialService = inject(MaterialService);
 
-  private readonly allItems = this.materialService.getStaticMaterials();
-  readonly categories = Array.from(new Set(this.allItems.map(i => i.category)));
+  private readonly allItems = signal<RegionalPriceItem[]>([]);
+  readonly categories = computed(() => Array.from(new Set(this.allItems().map(i => i.category))));
+  readonly loading = signal(false);
+  readonly error = signal('');
+  private requestId = 0;
 
   searchTerm = signal('');
   selectedCategory = signal('todas');
@@ -91,7 +107,7 @@ export class MaterialsCatalogComponent {
   readonly filteredMaterials = computed(() => {
     const q = this.searchTerm().trim().toLowerCase();
     const cat = this.selectedCategory();
-    return this.allItems.filter(item => {
+    return this.allItems().filter(item => {
       const matchCat = cat === 'todas' || item.category === cat;
       const matchSearch =
         !q ||
@@ -106,7 +122,28 @@ export class MaterialsCatalogComponent {
   readonly Package = Package;
   readonly Search = Search;
 
-  getAdjustedPrice(basePrice: number): number {
-    return Math.round(basePrice * this.ui.currentLocation().priceMultiplier * 100) / 100;
+  constructor() {
+    effect(() => {
+      const uf = this.ui.currentLocation().uf;
+      void this.loadPrices(uf);
+    });
+  }
+
+  async loadPrices(uf: string): Promise<void> {
+    const requestId = ++this.requestId;
+    this.loading.set(true);
+    this.error.set('');
+    this.allItems.set([]);
+    try {
+      const response = await this.materialService.getRegionalPrices(uf);
+      if (requestId === this.requestId) this.allItems.set(response.items);
+    } catch (err) {
+      if (requestId === this.requestId) {
+        console.error('[Catálogo] Falha ao carregar preços:', err);
+        this.error.set('Não foi possível carregar os preços do servidor.');
+      }
+    } finally {
+      if (requestId === this.requestId) this.loading.set(false);
+    }
   }
 }

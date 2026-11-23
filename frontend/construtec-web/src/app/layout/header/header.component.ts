@@ -3,7 +3,6 @@ import { Component, inject, signal } from '@angular/core';
 import {
   Camera,
   ChevronDown,
-  Eye,
   KeyRound,
   LogIn,
   LogOut,
@@ -103,7 +102,7 @@ import { ClickOutsideDirective } from '../../shared/directives/click-outside.dir
                       {{ user.name }}
                     </span>
                     <span class="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                      {{ ui.isUserTestMode() ? 'Modo Usuário' : auth.getRoleLabel(user) }}
+                      {{ auth.getRoleLabel(user) }}
                     </span>
                   </div>
                   <lucide-icon [img]="ChevronDown" class="w-3.5 h-3.5 text-slate-500 dark:text-slate-400"></lucide-icon>
@@ -165,22 +164,6 @@ import { ClickOutsideDirective } from '../../shared/directives/click-outside.dir
                           }
                         </button>
 
-                        <button
-                          type="button"
-                          (click)="toggleUserTest()"
-                          class="w-full px-4 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-between cursor-pointer"
-                        >
-                          <span class="flex items-center gap-2.5">
-                            <lucide-icon [img]="Eye" class="w-4 h-4 text-slate-400"></lucide-icon>
-                            Visão Usuário
-                          </span>
-                          <span
-                            class="text-[10px] px-1.5 py-0.5 rounded font-bold"
-                            [ngClass]="ui.isUserTestMode() ? 'bg-amber-500 text-slate-950' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'"
-                          >
-                            {{ ui.isUserTestMode() ? 'ON' : 'OFF' }}
-                          </span>
-                        </button>
                       }
 
                       <button
@@ -238,18 +221,12 @@ export class HeaderComponent {
   readonly ChevronDown = ChevronDown;
   readonly ShieldCheck = ShieldCheck;
   readonly KeyRound = KeyRound;
-  readonly Eye = Eye;
   readonly UserIcon = UserIcon;
   readonly Camera = Camera;
 
   goTo(tab: 'dashboard' | 'admin'): void {
     this.dropdownOpen.set(false);
     this.ui.navigateTo(tab);
-  }
-
-  toggleUserTest(): void {
-    this.dropdownOpen.set(false);
-    this.ui.toggleUserTestMode();
   }
 
   openAvatarModalFromBadge(event: Event): void {
@@ -272,7 +249,6 @@ export class HeaderComponent {
     this.dropdownOpen.set(false);
     this.auth.logout();
     this.obraService.clearOnLogout();
-    this.ui.isUserTestMode.set(false);
     this.ui.navigateTo('home');
   }
 }

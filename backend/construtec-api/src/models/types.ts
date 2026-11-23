@@ -22,6 +22,7 @@ export interface MaterialItem {
   totalPrice: number;
   commercialPackageDescription?: string;
   purpose?: string;
+  priceSource?: string;
 }
 
 export interface CalculationResult {

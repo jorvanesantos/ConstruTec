@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -27,7 +28,7 @@ import {
   Wrench
 } from 'lucide-angular';
 import { AuthService } from '../../core/services/auth.service';
-import { CalculoService } from '../../core/services/calculo.service';
+import { CalculoService, calculationErrorMessage } from '../../core/services/calculo.service';
 import { MaterialService } from '../../core/services/material.service';
 import { ObraService } from '../../core/services/obra.service';
 import { UiStateService } from '../../core/services/ui-state.service';
@@ -125,7 +126,7 @@ interface PendingCalculation {
           1. Selecione o Tipo de Obra
         </p>
         <div class="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
-          @for (wt of workTypes; track wt.id) {
+          @for (wt of workTypes(); track wt.id) {
             <button
               type="button"
               (click)="selectType(wt.id)"
@@ -175,6 +176,8 @@ interface PendingCalculation {
                     <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Tipo de Bloco / Tijolo</label>
                     <select [(ngModel)]="blockType" name="muroBlock" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-sm">
                       <option value="bloco_14">Bloco de Concreto 14x19x39 cm</option>
+                      <option value="bloco_14_6">Bloco 14x19x39 cm, FBK 6 MPa</option>
+                      <option value="bloco_19">Bloco 19x19x39 cm, FBK 4,5 MPa</option>
                       <option value="bloco_09">Bloco de Concreto 09x19x39 cm</option>
                       <option value="tijolo_8f">Tijolo Cerâmico 8 Furos</option>
                     </select>
@@ -210,6 +213,8 @@ interface PendingCalculation {
                     <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Bloco / Tijolo</label>
                     <select [(ngModel)]="blockType" name="pBlock" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-sm">
                       <option value="bloco_14">Bloco Concreto 14 cm</option>
+                      <option value="bloco_14_6">Bloco 14 cm, FBK 6 MPa</option>
+                      <option value="bloco_19">Bloco 19 cm, FBK 4,5 MPa</option>
                       <option value="bloco_09">Bloco Concreto 09 cm</option>
                       <option value="tijolo_8f">Tijolo 8 Furos</option>
                     </select>
@@ -559,6 +564,7 @@ interface PendingCalculation {
                       <td class="py-3.5 px-6">
                         <p class="font-bold text-slate-900 dark:text-white">{{ mat.name }}</p>
                         <p class="text-xs text-slate-500 dark:text-slate-400">{{ mat.purpose }}</p>
+                        @if (mat.priceSource) { <p class="text-xs text-slate-500 dark:text-slate-400">{{ mat.priceSource }}</p> }
                       </td>
                       <td class="py-3.5 px-4 text-right font-mono text-xs text-slate-500 dark:text-slate-400">
                         {{ mat.theoreticalQuantity }}
@@ -688,7 +694,7 @@ export class CalculatorComponent implements OnInit {
   private readonly obraService = inject(ObraService);
   private readonly router = inject(Router);
 
-  readonly workTypes = this.materialService.getStaticWorkTypes();
+  readonly workTypes = this.materialService.workTypes;
   readonly selectedType = signal<WorkTypeKey>('muro');
   readonly step = signal<1 | 2>(1);
   readonly result = signal<CalculationResult | null>(null);
@@ -707,7 +713,7 @@ export class CalculatorComponent implements OnInit {
   height = 2.5;
   width = 4;
   depth = 0.15;
-  blockType: 'bloco_14' | 'bloco_09' | 'tijolo_8f' = 'bloco_14';
+  blockType: 'bloco_14' | 'bloco_14_6' | 'bloco_19' | 'bloco_09' | 'tijolo_8f' = 'bloco_14';
   renderType: 'ambas_faces' | 'uma_face' | 'sem_reboco' = 'ambas_faces';
   tileType: 'porcelanato' | 'ceramica_padrao' = 'porcelanato';
   tileSizeCm = 60;
@@ -764,6 +770,10 @@ export class CalculatorComponent implements OnInit {
   }
 
   async ngOnInit(): Promise<void> {
+    await this.materialService.loadWorkTypes();
+    if (this.materialService.workTypesError()) {
+      this.errorMessage.set(this.materialService.workTypesError());
+    }
     this.selectType(this.ui.selectedWorkType());
     if (!this.auth.isLoggedIn()) {
       this.ui.openAuthModal('Faça login para realizar cálculos de materiais e gerar orçamentos.');
@@ -834,13 +844,13 @@ export class CalculatorComponent implements OnInit {
   }
 
   currentWorkInfo() {
-    return this.workTypes.find(w => w.id === this.selectedType());
+    return this.workTypes().find(w => w.id === this.selectedType());
   }
 
   selectType(type: WorkTypeKey): void {
     this.selectedType.set(type);
     this.ui.selectedWorkType.set(type);
-    const info = this.workTypes.find(w => w.id === type);
+    const info = this.workTypes().find(w => w.id === type);
     if (info) {
       this.wastePercentage = info.defaultWaste;
     }
@@ -866,6 +876,13 @@ export class CalculatorComponent implements OnInit {
   async runCalculation(): Promise<void> {
     if (this.invalidContext()) return;
     this.errorMessage.set('');
+    if (!this.workTypes().length) {
+      await this.materialService.loadWorkTypes();
+      if (!this.workTypes().length) {
+        this.errorMessage.set(this.materialService.workTypesError() || 'Não foi possível carregar os tipos de obra.');
+        return;
+      }
+    }
     if (!this.auth.isLoggedIn()) {
       this.ui.openAuthModal('Faça login para realizar cálculos de materiais e gerar orçamentos.');
       return;
@@ -924,12 +941,13 @@ export class CalculatorComponent implements OnInit {
       this.savedFeedback.set(false);
       this.step.set(2);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err: any) {
-      if (err?.status === 401 || err?.status === 403) {
+    } catch (err: unknown) {
+      if (err instanceof HttpErrorResponse && (err.status === 401 || err.status === 403)) {
         this.auth.logout();
         this.ui.openAuthModal('Sessão expirada. Faça login novamente para continuar calculando.');
       } else {
-        this.errorMessage.set('Não foi possível calcular. Revise os dados e tente novamente.');
+        console.error('[Cálculo] Não foi possível obter o resultado da API:', err);
+        this.errorMessage.set(calculationErrorMessage(err));
       }
     }
   }
